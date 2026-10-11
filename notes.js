@@ -121,10 +121,57 @@
     return { key: -down, ok: true };
   }
 
+  // YouTubeの動画タイトルとチャンネル名から、曲名と歌手名を推測する
+  function cleanChannel(ch) {
+    return String(ch || "")
+      .replace(/\s*-\s*Topic$/i, "")
+      .replace(/VEVO$/i, "")
+      .replace(/\s*(official\s*(youtube\s*)?channel|official|youtube\s*channel|channel|公式チャンネル|公式)\s*$/i, "")
+      .replace(/[\s　]+$/, "")
+      .trim();
+  }
+
+  function stripTags(s) {
+    var out = String(s || "").normalize("NFKC");
+    var tag = /(music\s*video|official|lyric|lyrics|mv|pv|video|audio|full|ver\.?|version|歌詞|公式|映像|ライブ|live|cover|フル|ショート|short|teaser|4k|hd)/i;
+    // 【MV】 [Official Video] (Lyric Video) などの括弧を外す
+    out = out.replace(/[【\[\(（〔]([^】\]\)）〕]*)[】\]\)）〕]/g, function (m, inner) {
+      return tag.test(inner) ? " " : m;
+    });
+    out = out.replace(/\s+(official\s+)?(music\s+video|mv|pv|lyric\s+video|official\s+video|audio)\s*$/i, "");
+    return out.replace(/\s+/g, " ").trim();
+  }
+
+  function parseVideoTitle(title, channel) {
+    var t = stripTags(title);
+    var ch = cleanChannel(channel);
+    var m;
+    var tidy = function (a) {
+      return a.replace(/\b(official\s+)?(music\s+video|mv|pv)\b/ig, "").replace(/[\/\-–—:]\s*$/, "").replace(/\s+/g, " ").trim();
+    };
+    // 歌手『曲名』/ 歌手「曲名」
+    if ((m = t.match(/^(.*?)\s*[『「]([^』」]+)[』」]/))) {
+      return { title: m[2].trim(), artist: tidy(m[1]) || ch };
+    }
+    // 歌手:曲名
+    if ((m = t.match(/^([^:]+?)\s*:\s*(.+)$/))) {
+      return { title: tidy(m[2]), artist: tidy(m[1]) };
+    }
+    // 曲名 / 歌手(日本の公式MVに多い形)
+    if ((m = t.match(/^(.+?)\s+[\/／]\s+(.+)$/))) {
+      return { title: m[1].trim(), artist: m[2].trim() };
+    }
+    // 歌手 - 曲名
+    if ((m = t.match(/^(.+?)\s+[\-–—]\s+(.+)$/))) {
+      return { title: m[2].trim(), artist: m[1].trim() };
+    }
+    return { title: t, artist: ch };
+  }
+
   var api = {
     noteName: noteName, sciName: sciName, freqToMidi: freqToMidi, midiToFreq: midiToFreq,
     detectPitch: detectPitch, formatScore: formatScore, normalize: normalize,
-    parseVideoId: parseVideoId, suggestKey: suggestKey,
+    parseVideoId: parseVideoId, suggestKey: suggestKey, parseVideoTitle: parseVideoTitle,
     SELECT_MIN: SELECT_MIN, SELECT_MAX: SELECT_MAX
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

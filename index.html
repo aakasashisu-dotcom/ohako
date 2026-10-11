@@ -30,7 +30,7 @@
   <!-- ログイン画面(Firebaseモードで未ログインのとき) -->
   <section class="view" id="view-login" hidden>
     <div class="login-card">
-      <p class="login-lead">友達と曲リストを共有する<br>カラオケ記録帳</p>
+      <p class="login-lead">自分だけの<br>カラオケ記録帳</p>
       <button class="btn btn-primary btn-lg" id="loginBtn" type="button">Googleでログイン</button>
       <p class="hint" id="loginError" hidden></p>
     </div>
@@ -48,12 +48,9 @@
           <option value="new">追加が新しい順</option>
           <option value="title">曲名順</option>
           <option value="artist">歌手名順</option>
-          <option value="maxDesc">最高音が高い順</option>
-          <option value="maxAsc">最高音が低い順</option>
           <option value="best">自己ベスト順</option>
           <option value="count">歌った回数順</option>
         </select>
-        <button class="chip-toggle" id="rangeToggle" type="button" aria-pressed="false">歌える曲だけ</button>
       </div>
       <p class="range-note" id="rangeNote"></p>
     </div>
@@ -72,54 +69,11 @@
     </div>
   </section>
 
-  <!-- 最高音チェック -->
-  <section class="view" id="view-pitch" hidden>
-    <h1 class="view-title">最高音チェック</h1>
-    <div class="pitch-panel">
-      <div class="pitch-now">
-        <div class="pitch-note" id="pitchNote">—</div>
-        <div class="pitch-sub" id="pitchSub">マイクを開始して声を出してください</div>
-        <div class="cents" aria-hidden="true"><div class="cents-needle" id="centsNeedle"></div></div>
-      </div>
-      <canvas id="pitchCanvas" class="pitch-canvas" height="160" aria-label="音程の推移"></canvas>
-      <div class="pitch-records">
-        <div class="record">
-          <span class="record-label">最高音</span>
-          <span class="record-value" id="pitchMax">—</span>
-        </div>
-        <div class="record">
-          <span class="record-label">最低音</span>
-          <span class="record-value" id="pitchMin">—</span>
-        </div>
-      </div>
-      <div class="pitch-actions">
-        <button class="btn btn-primary" id="micBtn" type="button">マイクを開始</button>
-        <button class="btn" id="pitchResetBtn" type="button">記録をリセット</button>
-      </div>
-      <button class="btn btn-wide" id="pitchSaveBtn" type="button" disabled>この音域を「自分の音域」に保存</button>
-      <p class="hint">同じ音が0.1秒ほど安定して出たときだけ記録します。裏声も地声も区別せず測ります。イヤホンは外し、静かな場所で試してください。</p>
-    </div>
-  </section>
 
   <!-- 設定 -->
   <section class="view" id="view-settings" hidden>
     <h1 class="view-title">設定</h1>
     <div class="settings">
-      <div class="field">
-        <label for="nameInput">表示名</label>
-        <input type="text" id="nameInput" maxlength="20" placeholder="例:たろう">
-      </div>
-      <fieldset class="field">
-        <legend>自分の音域</legend>
-        <div class="field-pair">
-          <label>最高音<select id="myMaxSelect"></select></label>
-          <label>最低音<select id="myMinSelect"></select></label>
-        </div>
-        <p class="hint">「歌える曲だけ」の絞り込みと、おすすめキーの計算に使います。</p>
-      </fieldset>
-      <button class="btn btn-primary" id="saveSettingsBtn" type="button">保存</button>
-      <p class="saved-msg" id="settingsSaved" hidden>保存しました</p>
-
       <div class="info-block">
         <h2>接続状態</h2>
         <p id="modeInfo"></p>
@@ -134,7 +88,6 @@
 <nav class="tabbar" id="tabbar" hidden>
   <button type="button" data-view="songs" class="tab is-active"><span class="tab-ico">♪</span>曲リスト</button>
   <button type="button" data-view="favs" class="tab"><span class="tab-ico">★</span>十八番</button>
-  <button type="button" data-view="pitch" class="tab"><span class="tab-ico">↑</span>最高音</button>
   <button type="button" data-view="settings" class="tab"><span class="tab-ico">≡</span>設定</button>
 </nav>
 
@@ -153,6 +106,16 @@
     <button class="icon-btn" type="button" data-close aria-label="閉じる">✕</button>
   </div>
   <form class="sheet-body song-form" id="songForm" novalidate>
+    <div class="form-yt" id="formYt" hidden>
+      <label for="fYtQuery" class="form-yt-label">YouTubeで探して追加</label>
+      <div class="yt-search">
+        <input type="search" id="fYtQuery" placeholder="曲名や歌手名" enterkeyhint="search" autocomplete="off">
+        <button class="btn btn-sm btn-primary" type="button" id="fYtBtn">検索</button>
+      </div>
+      <p class="hint" id="fYtStatus" hidden></p>
+      <ul class="yt-results" id="fYtResults"></ul>
+      <p class="form-divider"><span>曲名・歌手名を確認・手入力</span></p>
+    </div>
     <div class="field">
       <label for="fTitle">曲名 <span class="req">必須</span></label>
       <input type="text" id="fTitle" required maxlength="100">
@@ -160,16 +123,6 @@
     <div class="field">
       <label for="fArtist">歌手名</label>
       <input type="text" id="fArtist" maxlength="100">
-    </div>
-    <div class="field-pair">
-      <div class="field">
-        <label for="fMax">最高音</label>
-        <select id="fMax"></select>
-      </div>
-      <div class="field">
-        <label for="fMin">最低音</label>
-        <select id="fMin"></select>
-      </div>
     </div>
     <div class="field">
       <label for="fVideo">公式動画のURL(任意)</label>

@@ -60,7 +60,7 @@
   }
 
   // ------------------------------------------------------------
-  // データ保存先:Firebase(共有)または この端末(お試し)
+  // データ保存先:Firebase(ログインした本人のデータ)または この端末(お試し)
   // ------------------------------------------------------------
   function hasFirebaseConfig() {
     var f = CFG.firebase || {};
@@ -163,22 +163,21 @@
         });
       },
       signOut: function () { return auth.signOut(); },
-      onSongs: function (cb) { watch(db.collection("songs"), cb, snapList); },
+      onSongs: function (cb) { watch(userCol("songs"), cb, snapList); },
       onScores: function (cb) { watch(userCol("scores"), cb, snapList); },
       onFavs: function (cb) { watch(userCol("favs"), cb, snapList); },
       onProfile: function (cb) { watch(db.collection("users").doc(me.uid), cb, function (s) { return s.exists ? s.data() : {}; }); },
+      // 曲リストも点数も、すべて自分のアカウントの中に保存する(友達とは共有しない)
       addSong: function (d) {
-        return db.collection("songs").add(Object.assign({}, d, {
-          createdAt: Date.now(), createdBy: me.uid, createdByName: currentName()
-        })).then(function (r) { return r.id; });
+        return userCol("songs").add(Object.assign({}, d, { createdAt: Date.now() })).then(function (r) { return r.id; });
       },
-      updateSong: function (id, d) { return db.collection("songs").doc(id).update(Object.assign({}, d, { updatedAt: Date.now(), updatedBy: me.uid })); },
+      updateSong: function (id, d) { return userCol("songs").doc(id).update(Object.assign({}, d, { updatedAt: Date.now() })); },
       deleteSong: function (id) {
-        // 自分の記録も一緒に消す(友達の記録は各自のデータなので残る)
+        // その曲の点数記録と十八番も一緒に消す
         var batch = db.batch();
         state.scores.filter(function (s) { return s.songId === id; }).forEach(function (s) { batch.delete(userCol("scores").doc(s.id)); });
         batch.delete(userCol("favs").doc(id));
-        batch.delete(db.collection("songs").doc(id));
+        batch.delete(userCol("songs").doc(id));
         return batch.commit();
       },
       addScore: function (d) { return userCol("scores").add(Object.assign({ createdAt: Date.now() }, d)); },
@@ -206,7 +205,7 @@
   };
 
   function currentName() {
-    return (state.profile && state.profile.name) || (state.user && state.user.name) || "名無し";
+    return (state.user && state.user.name) || "設定";
   }
 
   function statsFor(songId) {
@@ -227,21 +226,19 @@
   function showView(name) {
     state.view = name;
     lsSet("ohako.view", name);
-    ["songs", "favs", "pitch", "settings"].forEach(function (v) {
+    ["songs", "favs", "settings"].forEach(function (v) {
       $("view-" + v).hidden = v !== name;
     });
     $("view-login").hidden = true;
     document.querySelectorAll(".tab").forEach(function (t) {
       t.classList.toggle("is-active", t.dataset.view === name);
     });
-    if (name !== "pitch") pitch.stop();
-    if (name === "pitch") pitch.resize();
     if (name === "settings") fillSettings();
     window.scrollTo(0, 0);
   }
 
   function showLogin() {
-    ["songs", "favs", "pitch", "settings"].forEach(function (v) { $("view-" + v).hidden = true; });
+    ["songs", "favs", "settings"].forEach(function (v) { $("view-" + v).hidden = true; });
     $("view-login").hidden = false;
     $("tabbar").hidden = true;
     $("userChip").hidden = true;
@@ -263,19 +260,10 @@
   // ------------------------------------------------------------
   function visibleSongs() {
     var q = N.normalize(state.query);
-    var r = myRange();
     var list = state.songs.slice();
     if (q) {
       list = list.filter(function (s) {
         return N.normalize(s.title).indexOf(q) >= 0 || N.normalize(s.artist).indexOf(q) >= 0;
-      });
-    }
-    if (state.rangeOnly && r.max != null) {
-      list = list.filter(function (s) {
-        if (s.maxNote == null) return false;
-        if (s.maxNote > r.max) return false;
-        if (r.min != null && s.minNote != null && s.minNote < r.min) return false;
-        return true;
       });
     }
     var cache = {};
@@ -291,23 +279,12 @@
       switch (state.sort) {
         case "title": return byStr(a.title, b.title);
         case "artist": return byStr(a.artist, b.artist) || byStr(a.title, b.title);
-        case "maxDesc": return nullLast(a.maxNote, b.maxNote, -1);
-        case "maxAsc": return nullLast(a.maxNote, b.maxNote, 1);
         case "best": return nullLast(st(a.id).best, st(b.id).best, -1);
         case "count": return st(b.id).count - st(a.id).count;
         default: return (b.createdAt || 0) - (a.createdAt || 0);
       }
     });
     return list;
-  }
-
-  function keyChip(song) {
-    var r = myRange();
-    var k = N.suggestKey(song.maxNote, song.minNote, r.max, r.min);
-    if (!k) return null;
-    if (!k.ok) return h("span", { class: "chip chip-warn", text: k.reason === "high" ? "高すぎ" : "音域外" });
-    if (k.key === 0) return h("span", { class: "chip chip-ok", text: "原曲キーOK" });
-    return h("span", { class: "chip chip-key", text: "キー" + (k.key > 0 ? "+" : "") + k.key });
   }
 
   function thumbUrl(song) {
@@ -321,15 +298,11 @@
     return h("li", null,
       h("button", { class: "song-card", type: "button", onclick: function () { openDetail(song.id); } },
         h("div", { class: "thumb" + (thumb ? "" : " thumb-empty") },
-          thumb ? h("img", { src: thumb, alt: "", loading: "lazy" }) : h("span", { class: "thumb-note", text: song.maxNote != null ? N.noteName(song.maxNote) : "♪" })
+          thumb ? h("img", { src: thumb, alt: "", loading: "lazy" }) : h("span", { class: "thumb-note", text: "♪" })
         ),
         h("div", { class: "song-main" },
           h("div", { class: "song-title" }, fav ? h("span", { class: "fav-star", "aria-label": "十八番", text: "★" }) : null, song.title || "(無題)"),
-          h("div", { class: "song-artist", text: song.artist || "歌手名なし" }),
-          h("div", { class: "chips" },
-            song.maxNote != null ? h("span", { class: "chip chip-note", text: "最高 " + N.noteName(song.maxNote) }) : h("span", { class: "chip chip-muted", text: "最高音 未登録" }),
-            keyChip(song)
-          )
+          h("div", { class: "song-artist", text: song.artist || "歌手名なし" })
         ),
         h("div", { class: "song-score" },
           h("span", { class: "score-num", text: s.best != null ? N.formatScore(s.best) : "—" }),
@@ -350,22 +323,14 @@
       empty.replaceChildren();
       if (!state.songs.length) {
         empty.appendChild(h("p", { text: "まだ曲が登録されていません。" }));
-        empty.appendChild(h("p", { class: "hint", text: "右下の「＋ 曲を追加」から、最初の1曲を登録しましょう。登録した曲は友達にも表示されます。" }));
+        empty.appendChild(h("p", { class: "hint", text: "右下の「＋ 曲を追加」から、最初の1曲を登録しましょう。" }));
       } else {
-        empty.appendChild(h("p", { text: "条件に合う曲がありません。" }));
-        if (state.rangeOnly) empty.appendChild(h("p", { class: "hint", text: "「歌える曲だけ」は最高音が登録された曲だけを表示します。" }));
+        empty.appendChild(h("p", { text: "検索に合う曲がありません。" }));
       }
     }
-    var r = myRange();
-    var note = $("rangeNote");
-    if (r.max != null) {
-      note.textContent = "自分の音域:" + (r.min != null ? N.noteName(r.min) + " 〜 " : "〜 ") + N.noteName(r.max) + "  ・ " + state.songs.length + "曲中 " + list.length + "曲を表示";
-    } else {
-      note.textContent = "設定で自分の音域を入れると、歌える曲の絞り込みとおすすめキーが使えます。";
-    }
-    var t = $("rangeToggle");
-    t.setAttribute("aria-pressed", state.rangeOnly ? "true" : "false");
-    t.disabled = r.max == null;
+    $("rangeNote").textContent = state.query
+      ? state.songs.length + "曲中 " + list.length + "曲"
+      : "全" + state.songs.length + "曲";
   }
 
   function renderFavs() {
@@ -432,15 +397,6 @@
         h("span", { text: "公式動画が未登録です" }));
     }
 
-    var r = myRange();
-    var k = N.suggestKey(song.maxNote, song.minNote, r.max, r.min);
-    var keyText = null;
-    if (k) {
-      if (!k.ok) keyText = k.reason === "high" ? "最高音が自分の音域より7半音以上高いです" : "自分の音域に収まりません";
-      else if (k.key === 0) keyText = "原曲キーで歌えます";
-      else keyText = "おすすめキー:" + (k.key > 0 ? "+" : "") + k.key;
-    }
-
     var bestId = null;
     stats.list.forEach(function (s) { if (s.score === stats.best && bestId == null) bestId = s.id; });
     var history = stats.list.slice().sort(function (a, b) {
@@ -464,23 +420,19 @@
       h("div", { class: "detail-head" },
         h("h2", { id: "detailTitle", class: "detail-title", text: song.title || "(無題)" }),
         h("p", { class: "detail-artist", text: song.artist || "歌手名なし" }),
-        h("div", { class: "note-row" },
-          h("div", { class: "note-box" }, h("span", { class: "note-label", text: "最高音" }), h("span", { class: "note-val", text: N.noteName(song.maxNote) }), h("span", { class: "note-sci", text: N.sciName(song.maxNote) })),
-          h("div", { class: "note-box" }, h("span", { class: "note-label", text: "最低音" }), h("span", { class: "note-val", text: N.noteName(song.minNote) }), h("span", { class: "note-sci", text: N.sciName(song.minNote) })),
-          h("div", { class: "note-box" }, h("span", { class: "note-label", text: "自己ベスト" }), h("span", { class: "note-val", text: stats.best != null ? N.formatScore(stats.best) : "—" }), h("span", { class: "note-sci", text: stats.count + "回歌った" }))
+        h("div", { class: "note-row note-row-2" },
+          h("div", { class: "note-box" }, h("span", { class: "note-label", text: "自己ベスト" }), h("span", { class: "note-val", text: stats.best != null ? N.formatScore(stats.best) : "—" })),
+          h("div", { class: "note-box" }, h("span", { class: "note-label", text: "歌った回数" }), h("span", { class: "note-val", text: stats.count + "回" }))
         ),
-        keyText ? h("p", { class: "key-text", text: keyText }) : null,
         h("button", { class: "btn btn-wide fav-btn" + (fav ? " is-on" : ""), type: "button", "aria-pressed": fav ? "true" : "false",
           onclick: function () { store.setFav(song.id, !fav).then(function () { toast(fav ? "十八番から外しました" : "十八番にしました"); }); } },
           fav ? "★ 十八番(外す)" : "☆ 十八番にする")
       ),
 
       h("div", { class: "links" },
-        h("a", { class: "link-btn link-dam", href: linkUrl(L.dam, song), target: "_blank", rel: "noopener" }, "DAMで探す"),
-        h("a", { class: "link-btn link-joy", href: linkUrl(L.joysound, song), target: "_blank", rel: "noopener" }, "JOYSOUNDで探す"),
+        h("a", { class: "link-btn link-joy link-full", href: linkUrl(L.joysound, song), target: "_blank", rel: "noopener" }, "JOYSOUNDで探す"),
         h("a", { class: "link-btn", href: linkUrl(L.utanet, song), target: "_blank", rel: "noopener" }, "歌詞(歌ネット)"),
-        h("a", { class: "link-btn", href: linkUrl(L.lyricsGoogle, song), target: "_blank", rel: "noopener" }, "歌詞(Google)"),
-        h("a", { class: "link-btn", href: linkUrl(L.youtube, song), target: "_blank", rel: "noopener" }, "YouTubeで開く")
+        h("a", { class: "link-btn", href: linkUrl(L.lyricsGoogle, song), target: "_blank", rel: "noopener" }, "歌詞(Google)")
       ),
 
       videoSection(song),
@@ -507,14 +459,13 @@
       ),
 
       h("section", { class: "detail-sec detail-foot" },
-        h("p", { class: "hint", text: "登録:" + (song.createdByName || "不明") + (store.mode === "firebase" ? " ・ 曲の情報はみんなで共有、点数と十八番は自分だけに保存されます" : "") }),
         h("div", { class: "foot-actions" },
           h("button", { class: "btn", type: "button", onclick: function () { openForm(song); } }, "曲の情報を編集"),
           detailUi.confirmDelete
             ? h("button", { class: "btn btn-danger", type: "button", onclick: function () {
                 store.deleteSong(song.id).then(function () { $("detailDialog").close(); toast("曲を削除しました"); })
                   .catch(function () { toast("削除できませんでした"); });
-              } }, store.mode === "firebase" ? "みんなのリストから削除する" : "本当に削除する")
+              } }, "本当に削除する(点数記録も消えます)")
             : h("button", { class: "btn btn-ghost-danger", type: "button", onclick: function () { detailUi.confirmDelete = true; renderDetail(); } }, "曲を削除")
         )
       )
@@ -543,16 +494,12 @@
       if (detailUi.ytError) sec.appendChild(h("p", { class: "form-error", text: detailUi.ytError }));
       if (detailUi.ytResults) {
         sec.appendChild(h("ul", { class: "yt-results" }, detailUi.ytResults.map(function (v) {
-          return h("li", null, h("button", { class: "yt-item" + (v.id === song.videoId ? " is-current" : ""), type: "button",
-            onclick: function () { setVideo(song, v.id, v.title); } },
-            h("img", { src: v.thumb, alt: "", loading: "lazy" }),
-            h("span", { class: "yt-text" }, h("span", { class: "yt-title", text: v.title }), h("span", { class: "yt-ch", text: v.channel }))
-          ));
+          return ytResultItem(v, v.id === song.videoId, function () { setVideo(song, v.id, v.title); });
         })));
         if (!detailUi.ytResults.length) sec.appendChild(h("p", { class: "hint", text: "見つかりませんでした。検索ワードを変えてみてください。" }));
       }
     } else {
-      sec.appendChild(h("p", { class: "hint", text: "YouTube APIキーが未設定なので、アプリ内検索は使えません。「YouTubeで開く」で動画を探し、URLを下に貼り付けてください。" }));
+      sec.appendChild(h("p", { class: "hint", text: "YouTube APIキーが未設定なので、アプリ内検索は使えません。YouTubeで動画を探し、URLを下に貼り付けてください。" }));
     }
 
     var ui = h("input", { type: "url", id: "ytUrl", placeholder: "YouTubeの動画URLを貼り付け", inputmode: "url", "aria-label": "動画URL" });
@@ -589,36 +536,52 @@
     return t.value;
   }
 
+  // YouTube検索(成功で動画の配列、失敗でメッセージ付きのエラー)
+  function ytSearch(q) {
+    var url = "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&regionCode=JP&q=" +
+      encodeURIComponent(q) + "&key=" + encodeURIComponent(CFG.youtubeApiKey);
+    return fetch(url).catch(function () {
+      throw new Error("通信に失敗しました。電波の良い場所で試してください。");
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
+      if (!res.ok) {
+        var reason = res.j && res.j.error && res.j.error.errors && res.j.error.errors[0] && res.j.error.errors[0].reason;
+        var msg;
+        if (reason === "quotaExceeded") msg = "今日の検索回数の上限(約100回)に達しました。明日になると戻ります。URL貼り付けは今でも使えます。";
+        else if (reason === "keyInvalid" || reason === "badRequest") msg = "YouTube APIキーが正しくありません。config.js を確認してください。";
+        else if (res.j && res.j.error && res.j.error.status === "PERMISSION_DENIED") msg = "APIキーの制限でこのサイトから使えません。キーの「ウェブサイトの制限」にこのサイトのURLを追加してください。";
+        else msg = "検索に失敗しました。" + (reason ? "(" + reason + ")" : "");
+        throw new Error(msg);
+      }
+      return (res.j.items || []).map(function (it) {
+        var sn = it.snippet || {};
+        return {
+          id: it.id && it.id.videoId,
+          title: decodeEntities(sn.title || ""),
+          channel: decodeEntities(sn.channelTitle || ""),
+          thumb: (sn.thumbnails && (sn.thumbnails.medium || sn.thumbnails.default) || {}).url || ""
+        };
+      }).filter(function (v) { return v.id; });
+    });
+  }
+
+  function ytResultItem(v, current, onPick) {
+    return h("li", null, h("button", { class: "yt-item" + (current ? " is-current" : ""), type: "button", onclick: onPick },
+      h("img", { src: v.thumb, alt: "", loading: "lazy" }),
+      h("span", { class: "yt-text" }, h("span", { class: "yt-title", text: v.title }), h("span", { class: "yt-ch", text: v.channel }))
+    ));
+  }
+
   function searchYoutube(song, q) {
     detailUi.ytLoading = true;
     detailUi.ytError = "";
     renderDetail();
-    var url = "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&regionCode=JP&q=" +
-      encodeURIComponent(q) + "&key=" + encodeURIComponent(CFG.youtubeApiKey);
-    fetch(url).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
+    ytSearch(q).then(function (items) {
+      detailUi.ytResults = items;
+    }).catch(function (e) {
+      detailUi.ytResults = null;
+      detailUi.ytError = e.message;
+    }).then(function () {
       detailUi.ytLoading = false;
-      if (!res.ok) {
-        var reason = res.j && res.j.error && res.j.error.errors && res.j.error.errors[0] && res.j.error.errors[0].reason;
-        if (reason === "quotaExceeded") detailUi.ytError = "今日の検索回数の上限(約100回)に達しました。明日になると戻ります。URL貼り付けは今でも使えます。";
-        else if (reason === "keyInvalid" || reason === "badRequest") detailUi.ytError = "YouTube APIキーが正しくありません。config.js を確認してください。";
-        else if (res.j && res.j.error && res.j.error.status === "PERMISSION_DENIED") detailUi.ytError = "APIキーの制限でこのサイトから使えません。キーの「ウェブサイトの制限」にこのサイトのURLを追加してください。";
-        else detailUi.ytError = "検索に失敗しました。" + (reason ? "(" + reason + ")" : "");
-        detailUi.ytResults = null;
-      } else {
-        detailUi.ytResults = (res.j.items || []).map(function (it) {
-          var sn = it.snippet || {};
-          return {
-            id: it.id && it.id.videoId,
-            title: decodeEntities(sn.title || ""),
-            channel: decodeEntities(sn.channelTitle || ""),
-            thumb: (sn.thumbnails && (sn.thumbnails.medium || sn.thumbnails.default) || {}).url || ""
-          };
-        }).filter(function (v) { return v.id; });
-      }
-      if (state.openSongId === song.id) renderDetail();
-    }).catch(function () {
-      detailUi.ytLoading = false;
-      detailUi.ytError = "通信に失敗しました。電波の良い場所で試してください。";
       if (state.openSongId === song.id) renderDetail();
     });
   }
@@ -632,9 +595,7 @@
     }));
     var keys = [];
     for (var i = -7; i <= 7; i++) keys.push(i);
-    var r = myRange();
-    var k = N.suggestKey(song.maxNote, song.minNote, r.max, r.min);
-    var defKey = k && k.ok ? k.key : 0;
+    var defKey = 0;
     var key = h("select", { id: "sKey" }, keys.map(function (v) {
       return h("option", { value: String(v), selected: v === defKey }, v === 0 ? "原曲キー" : (v > 0 ? "+" : "") + v);
     }));
@@ -669,14 +630,48 @@
   // ------------------------------------------------------------
   var editingId = null;
 
-  function fillNoteSelect(sel, value) {
-    var opts = [h("option", { value: "", text: "わからない" })];
-    for (var m = N.SELECT_MAX; m >= N.SELECT_MIN; m--) {
-      opts.push(h("option", { value: String(m), text: N.noteName(m) + "(" + N.sciName(m) + ")" }));
-    }
-    sel.replaceChildren.apply(sel, opts);
-    sel.value = value == null ? "" : String(value);
+  // 追加画面の「YouTubeから探す」
+  var formYt = { picked: null };
+
+  function formYtStatus(msg, isError) {
+    var el = $("fYtStatus");
+    el.textContent = msg || "";
+    el.className = isError ? "form-error" : "hint";
+    el.hidden = !msg;
   }
+
+  function runFormYtSearch() {
+    var q = $("fYtQuery").value.trim();
+    if (!q) { $("fYtQuery").focus(); return; }
+    formYtStatus("検索中…");
+    $("fYtResults").replaceChildren();
+    ytSearch(q).then(function (items) {
+      formYtStatus(items.length ? "動画を選ぶと、曲名・歌手名・動画が入ります。" : "見つかりませんでした。検索ワードを変えてみてください。");
+      renderFormYtResults(items);
+    }).catch(function (e) { formYtStatus(e.message, true); });
+  }
+
+  function renderFormYtResults(items) {
+    var ul = $("fYtResults");
+    ul.replaceChildren.apply(ul, items.map(function (v) {
+      return ytResultItem(v, formYt.picked === v.id, function () {
+        var guess = N.parseVideoTitle(v.title, v.channel);
+        formYt.picked = v.id;
+        $("fTitle").value = guess.title;
+        $("fArtist").value = guess.artist;
+        $("fVideo").value = "https://www.youtube.com/watch?v=" + v.id;
+        $("formError").hidden = true;
+        renderFormYtResults(items);
+        formYtStatus("入力しました。曲名と歌手名を確認して「追加する」を押してください。");
+        $("fTitle").scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }));
+  }
+
+  $("fYtBtn").addEventListener("click", runFormYtSearch);
+  $("fYtQuery").addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); runFormYtSearch(); }
+  });
 
   function openForm(song) {
     editingId = song ? song.id : null;
@@ -684,12 +679,17 @@
     $("formSubmit").textContent = song ? "保存する" : "追加する";
     $("fTitle").value = song ? song.title || "" : "";
     $("fArtist").value = song ? song.artist || "" : "";
-    fillNoteSelect($("fMax"), song ? song.maxNote : null);
-    fillNoteSelect($("fMin"), song ? song.minNote : null);
     $("fVideo").value = song && song.videoId ? "https://www.youtube.com/watch?v=" + song.videoId : "";
     $("formError").hidden = true;
+    // YouTube検索は新しく追加するときだけ(APIキーがあるとき)
+    var useYt = !song && !!CFG.youtubeApiKey;
+    $("formYt").hidden = !useYt;
+    formYt.picked = null;
+    $("fYtQuery").value = "";
+    $("fYtResults").replaceChildren();
+    formYtStatus("");
     $("formDialog").showModal();
-    if (!song) setTimeout(function () { $("fTitle").focus(); }, 50);
+    if (!song) setTimeout(function () { (useYt ? $("fYtQuery") : $("fTitle")).focus(); }, 50);
   }
 
   function formError(msg) {
@@ -702,19 +702,16 @@
     e.preventDefault();
     var title = $("fTitle").value.trim();
     var artist = $("fArtist").value.trim();
-    var max = $("fMax").value === "" ? null : parseInt($("fMax").value, 10);
-    var min = $("fMin").value === "" ? null : parseInt($("fMin").value, 10);
     var vRaw = $("fVideo").value.trim();
     var videoId = vRaw ? N.parseVideoId(vRaw) : null;
     if (!title) { formError("曲名を入れてください。"); $("fTitle").focus(); return; }
-    if (max != null && min != null && min > max) { formError("最低音が最高音より高くなっています。"); return; }
     if (vRaw && !videoId) { formError("YouTubeの動画URLを読み取れませんでした。"); return; }
     var dup = state.songs.find(function (s) {
       return s.id !== editingId && N.normalize(s.title) === N.normalize(title) && N.normalize(s.artist) === N.normalize(artist);
     });
     if (dup) { formError("同じ曲がすでに登録されています。"); return; }
 
-    var data = { title: title, artist: artist, maxNote: max, minNote: min };
+    var data = { title: title, artist: artist };
     if (vRaw || editingId) data.videoId = videoId;
     var p = editingId ? store.updateSong(editingId, data) : store.addSong(data);
     var wasEditing = editingId;
@@ -730,29 +727,15 @@
   // ------------------------------------------------------------
   function fillSettings() {
     var p = state.profile || {};
-    $("nameInput").value = p.name || (state.user && state.user.name) || "";
-    fillNoteSelect($("myMaxSelect"), p.rangeMax);
-    fillNoteSelect($("myMinSelect"), p.rangeMin);
     $("modeInfo").textContent = store.mode === "firebase"
-      ? "Firebaseに接続中:曲リストは友達と共有、点数と十八番は自分のアカウントに保存されます。"
+      ? "Firebaseに接続中:曲リスト・点数・十八番はすべて自分のアカウントだけに保存されます。どの端末からログインしても同じデータが見られます。"
       : "お試しモード:Firebaseが未設定のため、データはこの端末のブラウザだけに保存されます。";
     $("ytInfo").textContent = CFG.youtubeApiKey
       ? "YouTube動画検索:使えます(1日あたり約100回まで)"
       : "YouTube動画検索:APIキー未設定(URL貼り付けでの登録は使えます)";
     $("logoutBtn").hidden = store.mode !== "firebase";
     $("clearLocalBtn").hidden = store.mode !== "local";
-    $("settingsSaved").hidden = true;
   }
-
-  $("saveSettingsBtn").addEventListener("click", function () {
-    var max = $("myMaxSelect").value === "" ? null : parseInt($("myMaxSelect").value, 10);
-    var min = $("myMinSelect").value === "" ? null : parseInt($("myMinSelect").value, 10);
-    if (max != null && min != null && min > max) { toast("最低音が最高音より高くなっています"); return; }
-    store.saveProfile({ name: $("nameInput").value.trim(), rangeMax: max, rangeMin: min }).then(function () {
-      $("settingsSaved").hidden = false;
-      toast("保存しました");
-    }).catch(function () { toast("保存できませんでした"); });
-  });
 
   $("logoutBtn").addEventListener("click", function () { store.signOut(); });
 
@@ -766,159 +749,6 @@
     }
     store.clearAll();
   });
-
-  // ------------------------------------------------------------
-  // 最高音チェック(マイク)
-  // ------------------------------------------------------------
-  var pitch = (function () {
-    var ctx = null, analyser = null, stream = null, raf = 0, buf = null;
-    var running = false;
-    var recent = [];
-    var trail = [];
-    var hi = null, lo = null;
-    var canvas = $("pitchCanvas");
-
-    function resize() {
-      var w = canvas.clientWidth || 320;
-      var dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(w * dpr);
-      canvas.height = Math.round(160 * dpr);
-      draw();
-    }
-
-    function draw() {
-      var g = canvas.getContext("2d");
-      var W = canvas.width, H = canvas.height;
-      var dpr = window.devicePixelRatio || 1;
-      var cs = getComputedStyle(document.documentElement);
-      var line = cs.getPropertyValue("--line").trim() || "#ccc";
-      var muted = cs.getPropertyValue("--muted").trim() || "#888";
-      var accent = cs.getPropertyValue("--accent").trim() || "#d6246e";
-      var noteC = cs.getPropertyValue("--note").trim() || "#1f7a8c";
-      g.clearRect(0, 0, W, H);
-      // 表示範囲は記録に合わせて動かす
-      var lowM = 45, highM = 81; // mid1A 〜 hihiA
-      var vals = trail.filter(function (v) { return v != null; });
-      if (vals.length) {
-        lowM = Math.min(lowM, Math.floor(Math.min.apply(null, vals)) - 2);
-        highM = Math.max(highM, Math.ceil(Math.max.apply(null, vals)) + 2);
-      }
-      var y = function (m) { return H - ((m - lowM) / (highM - lowM)) * H; };
-      g.font = (11 * dpr) + "px 'Zen Kaku Gothic New', sans-serif";
-      g.textBaseline = "middle";
-      for (var m = Math.ceil(lowM / 12) * 12 + 9; m <= highM; m += 12) { // 各段のA
-        if (m < lowM) continue;
-        g.strokeStyle = line; g.lineWidth = dpr;
-        g.beginPath(); g.moveTo(0, y(m)); g.lineTo(W, y(m)); g.stroke();
-        g.fillStyle = muted;
-        g.fillText(N.noteName(m), 4 * dpr, y(m) - 8 * dpr);
-      }
-      if (hi != null) {
-        g.strokeStyle = accent; g.setLineDash([4 * dpr, 4 * dpr]);
-        g.beginPath(); g.moveTo(0, y(hi)); g.lineTo(W, y(hi)); g.stroke();
-        g.setLineDash([]);
-      }
-      g.strokeStyle = noteC; g.lineWidth = 2.5 * dpr; g.lineJoin = "round";
-      var step = W / 240;
-      g.beginPath();
-      var started = false;
-      for (var i = 0; i < trail.length; i++) {
-        var v = trail[i];
-        var x = W - (trail.length - i) * step;
-        if (v == null) { started = false; continue; }
-        if (!started) { g.moveTo(x, y(v)); started = true; } else g.lineTo(x, y(v));
-      }
-      g.stroke();
-    }
-
-    function setRecords() {
-      $("pitchMax").textContent = hi != null ? N.noteName(hi) + "  " + N.sciName(hi) : "—";
-      $("pitchMin").textContent = lo != null ? N.noteName(lo) + "  " + N.sciName(lo) : "—";
-      $("pitchSaveBtn").disabled = hi == null;
-    }
-
-    function tick() {
-      if (!running) return;
-      analyser.getFloatTimeDomainData(buf);
-      var f = N.detectPitch(buf, ctx.sampleRate);
-      var midi = f > 0 ? N.freqToMidi(f) : null;
-      if (midi != null && (midi < 28 || midi > 100)) midi = null;
-      trail.push(midi);
-      if (trail.length > 240) trail.shift();
-
-      var noteEl = $("pitchNote"), subEl = $("pitchSub"), needle = $("centsNeedle");
-      if (midi != null) {
-        var rounded = Math.round(midi);
-        var cents = Math.round((midi - rounded) * 100);
-        noteEl.textContent = N.noteName(rounded);
-        subEl.textContent = N.sciName(rounded) + " ・ " + Math.round(f) + "Hz ・ " + (cents >= 0 ? "+" : "") + cents + "セント";
-        needle.style.left = (50 + cents) + "%";
-        recent.push(rounded);
-        if (recent.length > 6) recent.shift();
-        // 6フレーム(約0.1秒)同じ音なら記録
-        if (recent.length === 6 && recent.every(function (r) { return r === rounded; }) && Math.abs(cents) < 45) {
-          if (hi == null || rounded > hi) hi = rounded;
-          if (lo == null || rounded < lo) lo = rounded;
-          setRecords();
-        }
-      } else {
-        recent = [];
-        subEl.textContent = "声を出してください";
-      }
-      draw();
-      raf = requestAnimationFrame(tick);
-    }
-
-    function start() {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        $("pitchSub").textContent = "このブラウザではマイクが使えません。https のページで開いてください。";
-        return;
-      }
-      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
-        .then(function (s) {
-          stream = s;
-          ctx = new (window.AudioContext || window.webkitAudioContext)();
-          var src = ctx.createMediaStreamSource(s);
-          analyser = ctx.createAnalyser();
-          analyser.fftSize = 2048;
-          buf = new Float32Array(analyser.fftSize);
-          src.connect(analyser);
-          running = true;
-          $("micBtn").textContent = "マイクを停止";
-          $("pitchSub").textContent = "声を出してください";
-          tick();
-        })
-        .catch(function () {
-          $("pitchSub").textContent = "マイクを使えませんでした。ブラウザの設定でマイクを許可してください。";
-        });
-    }
-
-    function stop() {
-      if (!running) return;
-      running = false;
-      cancelAnimationFrame(raf);
-      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-      if (ctx) ctx.close();
-      stream = null; ctx = null;
-      $("micBtn").textContent = "マイクを開始";
-      $("pitchSub").textContent = "停止中";
-    }
-
-    $("micBtn").addEventListener("click", function () { running ? stop() : start(); });
-    $("pitchResetBtn").addEventListener("click", function () {
-      hi = lo = null; trail = []; recent = [];
-      setRecords(); draw();
-    });
-    $("pitchSaveBtn").addEventListener("click", function () {
-      if (hi == null) return;
-      store.saveProfile({ rangeMax: hi, rangeMin: lo }).then(function () {
-        toast("自分の音域を " + N.noteName(lo) + " 〜 " + N.noteName(hi) + " にしました");
-      }).catch(function () { toast("保存できませんでした"); });
-    });
-    window.addEventListener("resize", function () { if (!$("view-pitch").hidden) resize(); });
-
-    return { start: start, stop: stop, resize: resize };
-  })();
 
   // ------------------------------------------------------------
   // イベント
@@ -938,9 +768,9 @@
   });
 
   $("searchInput").addEventListener("input", function (e) { state.query = e.target.value; renderSongs(); });
+  if (["new", "title", "artist", "best", "count"].indexOf(state.sort) < 0) state.sort = "new";
   $("sortSelect").value = state.sort;
   $("sortSelect").addEventListener("change", function (e) { state.sort = e.target.value; lsSet("ohako.sort", state.sort); renderSongs(); });
-  $("rangeToggle").addEventListener("click", function () { state.rangeOnly = !state.rangeOnly; lsSet("ohako.rangeOnly", state.rangeOnly); renderSongs(); });
   $("addSongBtn").addEventListener("click", function () { openForm(null); });
   $("loginBtn").addEventListener("click", function () {
     $("loginError").hidden = true;
@@ -974,12 +804,8 @@
     });
     store.onProfile(function (p) {
       state.profile = p || {};
-      if (store.mode === "firebase" && !state.profile.name && user.name) {
-        store.saveProfile({ name: user.name });
-      }
-      chip.textContent = currentName();
       renderAll();
     });
-    showView(["songs", "favs", "pitch", "settings"].indexOf(state.view) >= 0 ? state.view : "songs");
+    showView(["songs", "favs", "settings"].indexOf(state.view) >= 0 ? state.view : "songs");
   });
 })();

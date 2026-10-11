@@ -178,7 +178,7 @@ main { max-width: 640px; margin: 0 auto; padding-inline: 16px; }
 /* ---------- 下部タブ ---------- */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(3, 1fr);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   background: var(--surface); border-top: 1px solid var(--line);
 }
@@ -223,6 +223,8 @@ main { max-width: 640px; margin: 0 auto; padding-inline: 16px; }
 .detail-title { margin: 0; font-size: 22px; line-height: 1.35; text-wrap: balance; }
 .detail-artist { margin: -8px 0 0; color: var(--muted); }
 .note-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.note-row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.link-btn.link-full { flex-basis: 100%; }
 .note-box { background: var(--surface); border-radius: 12px; padding: 8px 10px; display: grid; min-width: 0; }
 .note-label { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: .04em; }
 .note-val { font-family: var(--font-display); font-size: 19px; line-height: 1.35; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -269,7 +271,7 @@ main { max-width: 640px; margin: 0 auto; padding-inline: 16px; }
 .score-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .score-grid label, .field-pair label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); font-weight: 700; }
 .sg-score { grid-column: 1 / -1; }
-.sg-score input { font-family: var(--font-display); font-size: 22px; color: var(--ink); }
+.sg-score input { font-family: var(--font-body); font-size: 20px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
 
 .history { list-style: none; margin: 0; padding: 0; display: grid; }
 .hist { display: flex; align-items: flex-start; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -283,27 +285,18 @@ main { max-width: 640px; margin: 0 auto; padding-inline: 16px; }
 .hist-del.is-confirm { background: var(--danger); color: #fff; font-weight: 700; }
 
 /* ---------- フォーム ---------- */
+.form-yt { display: grid; gap: 10px; }
+.form-yt-label { font-size: 13px; font-weight: 700; }
+.form-yt .yt-search input { background: var(--surface); }
+.form-yt .yt-item { background: var(--surface); }
+.form-divider { display: flex; align-items: center; gap: 10px; margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.form-divider::before, .form-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .field { display: grid; gap: 4px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .field > label, .field > legend { font-size: 13px; font-weight: 700; padding: 0; }
 .req { font-size: 10px; color: var(--accent); margin-left: 4px; }
 .field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .form-error { margin: 0; color: var(--danger); font-size: 13px; font-weight: 700; }
 .form-actions { display: grid; }
-
-/* ---------- 最高音チェック ---------- */
-.pitch-panel { display: grid; gap: 14px; }
-.pitch-now { background: var(--surface); border-radius: var(--radius); padding: 18px 16px 14px; text-align: center; box-shadow: var(--shadow); }
-.pitch-note { font-family: var(--font-display); font-size: clamp(48px, 16vw, 76px); line-height: 1.1; color: var(--accent); font-variant-numeric: tabular-nums; }
-.pitch-sub { font-size: 13px; color: var(--muted); min-height: 1.6em; font-variant-numeric: tabular-nums; }
-.cents { position: relative; height: 6px; margin: 12px auto 0; max-width: 240px; border-radius: 99px; background: var(--surface-2); }
-.cents::after { content: ""; position: absolute; left: 50%; top: -3px; width: 2px; height: 12px; background: var(--muted); transform: translateX(-1px); }
-.cents-needle { position: absolute; left: 50%; top: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--note); transform: translateX(-5px); transition: left .08s linear; }
-.pitch-canvas { width: 100%; height: 160px; display: block; background: var(--surface); border-radius: var(--radius); }
-.pitch-records { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.record { background: var(--surface); border-radius: 12px; padding: 10px 12px; display: grid; }
-.record-label { font-size: 12px; color: var(--muted); font-weight: 700; }
-.record-value { font-family: var(--font-display); font-size: 20px; font-variant-numeric: tabular-nums; white-space: pre; }
-.pitch-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
 /* ---------- 設定 ---------- */
 .settings { display: grid; gap: 16px; }
@@ -322,5 +315,4 @@ main { max-width: 640px; margin: 0 auto; padding-inline: 16px; }
 
 @media (prefers-reduced-motion: reduce) {
   .sheet[open] { animation: none; }
-  .cents-needle { transition: none; }
 }
