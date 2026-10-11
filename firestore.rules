@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- 使える人を決める ----
+    // 友達のGoogleアカウントのメールアドレスを並べてください。
+    // ここに無い人はログインできても、データを読むことも書くこともできません。
+    function isMember() {
+      return request.auth != null
+        && request.auth.token.email in [
+          'your-address@gmail.com',
+          'friend1@gmail.com',
+          'friend2@gmail.com'
+        ];
+    }
+
+    // 曲リスト:メンバーみんなで共有(誰でも追加・編集・削除できる)
+    match /songs/{songId} {
+      allow read: if isMember();
+      allow create, update: if isMember()
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 100;
+      allow delete: if isMember();
+    }
+
+    // 各自のデータ:プロフィール・点数・十八番は本人だけが読み書きできる
+    match /users/{userId} {
+      allow read, write: if isMember() && request.auth.uid == userId;
+      match /{sub=**} {
+        allow read, write: if isMember() && request.auth.uid == userId;
+      }
+    }
+  }
+}
