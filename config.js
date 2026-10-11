@@ -7,17 +7,17 @@ window.OHAKO_CONFIG = {
   // ---- Firebase(友達とデータを共有するのに必要)----
   // 空のままだと「お試しモード」で動きます(データはこの端末だけに保存)。
   firebase: {
-    apiKey: "",
-    authDomain: "",
-    projectId: "",
-    storageBucket: "",
-    messagingSenderId: "",
-    appId: ""
+    apiKey: "AIzaSyBFxwd_gNooJsrs36VWpcxc2GT1Pmwkumw",
+    authDomain: "ohako-975b5.firebaseapp.com",
+    projectId: "ohako-975b5",
+    storageBucket: "ohako-975b5.firebasestorage.app",
+    messagingSenderId: "983200906750",
+    appId: "1:983200906750:web:e7c73f24187465668f94af"
   },
 
   // ---- YouTube Data API キー(アプリ内の動画検索に必要)----
   // 空のままでも、動画URLを貼り付ければサムネ表示と再生はできます。
-  youtubeApiKey: "",
+  youtubeApiKey: "AIzaSyD9BupoOfvneslh0aUWJfYHn4VKMez3Ctw",
 
   // ---- 外部サイトの検索リンク ----
   // {q} の部分に「曲名 歌手名」が入ります。サイト側の仕様が変わって
