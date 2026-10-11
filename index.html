@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 
@@ -59,13 +59,13 @@
     <button class="fab" id="addSongBtn" type="button" aria-label="曲を追加">＋ 曲を追加</button>
   </section>
 
-  <!-- 十八番 -->
+  <!-- お気に入り -->
   <section class="view" id="view-favs" hidden>
-    <h1 class="view-title">十八番</h1>
+    <h1 class="view-title">お気に入り</h1>
     <ul class="song-list" id="favList"></ul>
     <div class="empty" id="favsEmpty" hidden>
-      <p>まだ十八番がありません。</p>
-      <p class="hint">曲の詳細画面で「十八番にする」を押すと、ここに並びます。</p>
+      <p>まだお気に入りがありません。</p>
+      <p class="hint">曲の詳細画面で「お気に入りに追加」を押すと、ここに並びます。</p>
     </div>
   </section>
 
@@ -87,7 +87,7 @@
 
 <nav class="tabbar" id="tabbar" hidden>
   <button type="button" data-view="songs" class="tab is-active"><span class="tab-ico">♪</span>曲リスト</button>
-  <button type="button" data-view="favs" class="tab"><span class="tab-ico">★</span>十八番</button>
+  <button type="button" data-view="favs" class="tab"><span class="tab-ico">★</span>お気に入り</button>
   <button type="button" data-view="settings" class="tab"><span class="tab-ico">≡</span>設定</button>
 </nav>
 
@@ -125,7 +125,7 @@
       <input type="text" id="fArtist" maxlength="100">
     </div>
     <div class="field">
-      <label for="fVideo">公式動画のURL(任意)</label>
+      <label for="fVideo">動画のURL(任意)</label>
       <input type="url" id="fVideo" placeholder="https://www.youtube.com/watch?v=…" inputmode="url">
     </div>
     <p class="form-error" id="formError" hidden></p>
@@ -141,8 +141,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="config.js"></script>
-<script src="notes.js"></script>
-<script src="app.js"></script>
+<script src="config.js?v=5"></script>
+<script src="notes.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

@@ -173,7 +173,7 @@
       },
       updateSong: function (id, d) { return userCol("songs").doc(id).update(Object.assign({}, d, { updatedAt: Date.now() })); },
       deleteSong: function (id) {
-        // その曲の点数記録と十八番も一緒に消す
+        // その曲の点数記録とお気に入りも一緒に消す
         var batch = db.batch();
         state.scores.filter(function (s) { return s.songId === id; }).forEach(function (s) { batch.delete(userCol("scores").doc(s.id)); });
         batch.delete(userCol("favs").doc(id));
@@ -301,7 +301,7 @@
           thumb ? h("img", { src: thumb, alt: "", loading: "lazy" }) : h("span", { class: "thumb-note", text: "♪" })
         ),
         h("div", { class: "song-main" },
-          h("div", { class: "song-title" }, fav ? h("span", { class: "fav-star", "aria-label": "十八番", text: "★" }) : null, song.title || "(無題)"),
+          h("div", { class: "song-title" }, fav ? h("span", { class: "fav-star", "aria-label": "お気に入り", text: "★" }) : null, song.title || "(無題)"),
           h("div", { class: "song-artist", text: song.artist || "歌手名なし" })
         ),
         h("div", { class: "song-score" },
@@ -386,7 +386,7 @@
       media = h("div", { class: "media" },
         h("iframe", {
           src: "https://www.youtube-nocookie.com/embed/" + song.videoId + "?autoplay=1&playsinline=1&rel=0",
-          title: "公式動画", allow: "autoplay; encrypted-media; picture-in-picture; fullscreen", allowfullscreen: true
+          title: "動画", allow: "autoplay; encrypted-media; picture-in-picture; fullscreen", allowfullscreen: true
         }));
     } else if (song.videoId) {
       media = h("button", { class: "media media-thumb", type: "button", "aria-label": "動画を再生", onclick: function () { detailUi.playing = true; renderDetail(); } },
@@ -394,7 +394,7 @@
         h("span", { class: "play", text: "▶" }));
     } else {
       media = h("div", { class: "media media-empty" },
-        h("span", { text: "公式動画が未登録です" }));
+        h("span", { text: "動画が未登録です" }));
     }
 
     var bestId = null;
@@ -425,12 +425,11 @@
           h("div", { class: "note-box" }, h("span", { class: "note-label", text: "歌った回数" }), h("span", { class: "note-val", text: stats.count + "回" }))
         ),
         h("button", { class: "btn btn-wide fav-btn" + (fav ? " is-on" : ""), type: "button", "aria-pressed": fav ? "true" : "false",
-          onclick: function () { store.setFav(song.id, !fav).then(function () { toast(fav ? "十八番から外しました" : "十八番にしました"); }); } },
-          fav ? "★ 十八番(外す)" : "☆ 十八番にする")
+          onclick: function () { store.setFav(song.id, !fav).then(function () { toast(fav ? "お気に入りから外しました" : "お気に入りに追加しました"); }); } },
+          fav ? "★ お気に入り(外す)" : "☆ お気に入りに追加")
       ),
 
       h("div", { class: "links" },
-        h("a", { class: "link-btn link-joy link-full", href: linkUrl(L.joysound, song), target: "_blank", rel: "noopener" }, "JOYSOUNDで探す"),
         h("a", { class: "link-btn", href: linkUrl(L.utanet, song), target: "_blank", rel: "noopener" }, "歌詞(歌ネット)"),
         h("a", { class: "link-btn", href: linkUrl(L.lyricsGoogle, song), target: "_blank", rel: "noopener" }, "歌詞(Google)")
       ),
@@ -475,7 +474,7 @@
   function videoSection(song) {
     var sec = h("section", { class: "detail-sec" });
     var head = h("div", { class: "sec-head" },
-      h("h3", { text: "公式動画" }),
+      h("h3", { text: "動画" }),
       h("button", { class: "btn btn-sm", type: "button", "aria-expanded": detailUi.ytOpen ? "true" : "false",
         onclick: function () {
           detailUi.ytOpen = !detailUi.ytOpen;
@@ -526,7 +525,7 @@
     store.updateSong(song.id, { videoId: id, videoTitle: title || null }).then(function () {
       detailUi.ytOpen = false;
       detailUi.playing = false;
-      toast("公式動画を登録しました");
+      toast("動画を登録しました");
     }).catch(function () { toast("登録できませんでした"); });
   }
 
@@ -728,7 +727,7 @@
   function fillSettings() {
     var p = state.profile || {};
     $("modeInfo").textContent = store.mode === "firebase"
-      ? "Firebaseに接続中:曲リスト・点数・十八番はすべて自分のアカウントだけに保存されます。どの端末からログインしても同じデータが見られます。"
+      ? "Firebaseに接続中:曲リスト・点数・お気に入りはすべて自分のアカウントだけに保存されます。どの端末からログインしても同じデータが見られます。"
       : "お試しモード:Firebaseが未設定のため、データはこの端末のブラウザだけに保存されます。";
     $("ytInfo").textContent = CFG.youtubeApiKey
       ? "YouTube動画検索:使えます(1日あたり約100回まで)"
