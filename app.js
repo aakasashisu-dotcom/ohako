@@ -60,49 +60,62 @@
   }
 
   // ------------------------------------------------------------
-  // データ保存先:Firebase(ログインした本人のデータ)または この端末(お試し)
+  // データ保存先:この端末のブラウザ(ログイン不要)
   // ------------------------------------------------------------
-  function hasFirebaseConfig() {
-    var f = CFG.firebase || {};
-    return !!(f.apiKey && f.projectId && window.firebase);
+  var STORE_KEY = "ohako.local.v1";
+
+  function emptyData() { return { songs: {}, scores: {}, favs: {}, profile: {} }; }
+
+  // 読み込んだデータの形を整える(壊れた値や古い形でも動くように)
+  function normalizeData(d) {
+    var out = emptyData();
+    if (!d || typeof d !== "object") return out;
+    ["songs", "scores", "favs"].forEach(function (k) {
+      var src = d[k];
+      if (src && typeof src === "object" && !Array.isArray(src)) {
+        Object.keys(src).forEach(function (id) { if (src[id] && typeof src[id] === "object") out[k][id] = src[id]; });
+      }
+    });
+    if (d.profile && typeof d.profile === "object") out.profile = d.profile;
+    // 存在しない曲への記録・お気に入りは捨てる
+    Object.keys(out.scores).forEach(function (id) { if (!out.songs[out.scores[id].songId]) delete out.scores[id]; });
+    Object.keys(out.favs).forEach(function (id) { if (!out.songs[id]) delete out.favs[id]; });
+    return out;
   }
 
   function createLocalStore() {
-    var KEY = "ohako.local.v1";
-    var data = lsGet(KEY, null);
-    if (!data) {
-      var now = Date.now();
-      data = {
-        songs: {
-          ex1: { title: "(例)夜明けのテールランプ", artist: "サンプル歌手", maxNote: 69, minNote: 50, createdAt: now - 3000, createdByName: "お試し" },
-          ex2: { title: "(例)ミッドナイト・コーラス", artist: "見本バンド", maxNote: 74, minNote: 55, createdAt: now - 2000, createdByName: "お試し" },
-          ex3: { title: "(例)ゆっくり歩こう", artist: "テスト合唱団", maxNote: 64, minNote: 48, createdAt: now - 1000, createdByName: "お試し" }
-        },
-        scores: {
-          s1: { songId: "ex1", score: 88.512, machine: "DAM", key: 0, date: today(), memo: "サビの高音が少し苦しい", createdAt: now },
-          s2: { songId: "ex1", score: 90.104, machine: "DAM", key: -1, date: today(), memo: "", createdAt: now + 1 },
-          s3: { songId: "ex3", score: 93.25, machine: "JOYSOUND", key: 0, date: today(), memo: "", createdAt: now + 2 }
-        },
-        favs: { ex3: { createdAt: now } },
-        profile: { name: "", rangeMax: 70, rangeMin: 48 }
-      };
-      lsSet(KEY, data);
-    }
+    var data = normalizeData(lsGet(STORE_KEY, null));
     var subs = { songs: [], scores: [], favs: [], profile: [] };
-    function emit(kind) {
-      lsSet(KEY, data);
-      subs[kind].forEach(function (cb) { cb(listOf(kind)); });
+    var warned = false;
+
+    function save() {
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(data));
+      } catch (e) {
+        if (!warned) { toast("この端末に保存できませんでした。ブラウザの設定(プライベートモードなど)を確認してください"); warned = true; }
+      }
     }
     function listOf(kind) {
       if (kind === "profile") return data.profile;
       return Object.keys(data[kind]).map(function (id) { return Object.assign({ id: id }, data[kind][id]); });
     }
+    function notify(kind) { subs[kind].forEach(function (cb) { cb(listOf(kind)); }); }
+    function emit(kind) { save(); notify(kind); }
+    function emitAll() { save(); ["songs", "scores", "favs", "profile"].forEach(notify); }
     function sub(kind, cb) { subs[kind].push(cb); cb(listOf(kind)); }
+
+    // 別のタブで変更されたら取り込む
+    window.addEventListener("storage", function (e) {
+      if (e.key !== STORE_KEY) return;
+      data = normalizeData(lsGet(STORE_KEY, null));
+      ["songs", "scores", "favs", "profile"].forEach(notify);
+    });
+
+    // ブラウザに「このデータは消さないで」と頼む(対応ブラウザのみ)
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+
     return {
-      mode: "local",
-      start: function (onUser) { onUser({ uid: "local", name: data.profile.name || "" }); },
-      signIn: function () { return Promise.resolve(); },
-      signOut: function () { return Promise.resolve(); },
+      start: function (onReady) { onReady(); },
       onSongs: function (cb) { sub("songs", cb); },
       onScores: function (cb) { sub("scores", cb); },
       onFavs: function (cb) { sub("favs", cb); },
@@ -113,7 +126,7 @@
         delete data.songs[id];
         Object.keys(data.scores).forEach(function (k) { if (data.scores[k].songId === id) delete data.scores[k]; });
         delete data.favs[id];
-        emit("songs"); emit("scores"); emit("favs");
+        emitAll();
         return Promise.resolve();
       },
       addScore: function (d) { data.scores[uid()] = Object.assign({ createdAt: Date.now() }, d); emit("scores"); return Promise.resolve(); },
@@ -121,94 +134,30 @@
       updateScore: function (id, d) { data.scores[id] = Object.assign({}, data.scores[id], d, { updatedAt: Date.now() }); emit("scores"); return Promise.resolve(); },
       setFav: function (songId, on) { if (on) data.favs[songId] = { createdAt: Date.now() }; else delete data.favs[songId]; emit("favs"); return Promise.resolve(); },
       saveProfile: function (p) { data.profile = Object.assign({}, data.profile, p); emit("profile"); return Promise.resolve(); },
-      clearAll: function () { try { localStorage.removeItem(KEY); } catch (e) {} location.reload(); }
-    };
-  }
-
-  function createFirebaseStore() {
-    firebase.initializeApp(CFG.firebase);
-    var auth = firebase.auth();
-    var db = firebase.firestore();
-    try { db.enablePersistence({ synchronizeTabs: true }).catch(function () {}); } catch (e) {}
-    var me = null;
-    var unsubs = [];
-    var FV = firebase.firestore.FieldValue;
-
-    function userCol(name) { return db.collection("users").doc(me.uid).collection(name); }
-    function snapList(snap) { return snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }); }
-    function watch(ref, cb, mapper) {
-      unsubs.push(ref.onSnapshot(function (s) { cb(mapper(s)); }, function (err) {
-        console.error(err);
-        toast(err.code === "permission-denied" ? "このアカウントには閲覧の許可がありません" : "データの読み込みに失敗しました");
-      }));
-    }
-
-    return {
-      mode: "firebase",
-      start: function (onUser) {
-        auth.getRedirectResult().catch(function (e) { showLoginError(e); });
-        auth.onAuthStateChanged(function (u) {
-          unsubs.forEach(function (f) { f(); });
-          unsubs = [];
-          me = u ? { uid: u.uid, name: u.displayName || "", photo: u.photoURL || "" } : null;
-          onUser(me);
-        });
+      exportData: function () { return { app: "ohako", version: 1, exportedAt: new Date().toISOString(), data: data }; },
+      importData: function (obj) {
+        var src = obj && obj.app === "ohako" && obj.data ? obj.data : obj;
+        var next = normalizeData(src);
+        if (!Object.keys(next.songs).length) return Promise.reject(new Error("empty"));
+        data = next;
+        emitAll();
+        return Promise.resolve({ songs: Object.keys(data.songs).length, scores: Object.keys(data.scores).length });
       },
-      signIn: function () {
-        var p = new firebase.auth.GoogleAuthProvider();
-        return auth.signInWithPopup(p).catch(function (e) {
-          if (e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment")) {
-            return auth.signInWithRedirect(p);
-          }
-          throw e;
-        });
-      },
-      signOut: function () { return auth.signOut(); },
-      onSongs: function (cb) { watch(userCol("songs"), cb, snapList); },
-      onScores: function (cb) { watch(userCol("scores"), cb, snapList); },
-      onFavs: function (cb) { watch(userCol("favs"), cb, snapList); },
-      onProfile: function (cb) { watch(db.collection("users").doc(me.uid), cb, function (s) { return s.exists ? s.data() : {}; }); },
-      // 曲リストも点数も、すべて自分のアカウントの中に保存する(友達とは共有しない)
-      addSong: function (d) {
-        return userCol("songs").add(Object.assign({}, d, { createdAt: Date.now() })).then(function (r) { return r.id; });
-      },
-      updateSong: function (id, d) { return userCol("songs").doc(id).update(Object.assign({}, d, { updatedAt: Date.now() })); },
-      deleteSong: function (id) {
-        // その曲の点数記録とお気に入りも一緒に消す
-        var batch = db.batch();
-        state.scores.filter(function (s) { return s.songId === id; }).forEach(function (s) { batch.delete(userCol("scores").doc(s.id)); });
-        batch.delete(userCol("favs").doc(id));
-        batch.delete(userCol("songs").doc(id));
-        return batch.commit();
-      },
-      addScore: function (d) { return userCol("scores").add(Object.assign({ createdAt: Date.now() }, d)); },
-      deleteScore: function (id) { return userCol("scores").doc(id).delete(); },
-      updateScore: function (id, d) { return userCol("scores").doc(id).update(Object.assign({}, d, { updatedAt: Date.now() })); },
-      setFav: function (songId, on) {
-        var ref = userCol("favs").doc(songId);
-        return on ? ref.set({ createdAt: Date.now() }) : ref.delete();
-      },
-      saveProfile: function (p) { return db.collection("users").doc(me.uid).set(Object.assign({}, p, { updatedAt: FV.serverTimestamp() }), { merge: true }); }
+      clearAll: function () { data = emptyData(); emitAll(); return Promise.resolve(); }
     };
   }
 
   // ------------------------------------------------------------
   // 状態
   // ------------------------------------------------------------
-  var store = hasFirebaseConfig() ? createFirebaseStore() : createLocalStore();
+  var store = createLocalStore();
   var state = {
-    user: null,
     songs: [], scores: [], favs: {}, profile: {},
     view: lsGet("ohako.view", "songs"),
     sort: lsGet("ohako.sort", "new"),
-    rangeOnly: lsGet("ohako.rangeOnly", false),
     query: "",
     openSongId: null
   };
-
-  function currentName() {
-    return (state.user && state.user.name) || "設定";
-  }
 
   function statsFor(songId) {
     var list = state.scores.filter(function (s) { return s.songId === songId; });
@@ -237,11 +186,6 @@
     return Math.round((t - s) / 86400000);
   }
 
-  function myRange() {
-    var p = state.profile || {};
-    return { max: p.rangeMax == null ? null : Number(p.rangeMax), min: p.rangeMin == null ? null : Number(p.rangeMin) };
-  }
-
   // ------------------------------------------------------------
   // 画面の切り替え
   // ------------------------------------------------------------
@@ -251,30 +195,11 @@
     ["songs", "favs", "settings"].forEach(function (v) {
       $("view-" + v).hidden = v !== name;
     });
-    $("view-login").hidden = true;
     document.querySelectorAll(".tab").forEach(function (t) {
       t.classList.toggle("is-active", t.dataset.view === name);
     });
     if (name === "settings") fillSettings();
     window.scrollTo(0, 0);
-  }
-
-  function showLogin() {
-    ["songs", "favs", "settings"].forEach(function (v) { $("view-" + v).hidden = true; });
-    $("view-login").hidden = false;
-    $("tabbar").hidden = true;
-    $("userChip").hidden = true;
-  }
-
-  function showLoginError(e) {
-    var el = $("loginError");
-    var code = e && e.code;
-    var msg = "ログインに失敗しました。";
-    if (code === "auth/unauthorized-domain") msg = "このURLはログインが許可されていません。Firebaseの「承認済みドメイン」にこのサイトのドメインを追加してください。";
-    else if (code === "auth/popup-closed-by-user") msg = "ログイン画面が閉じられました。もう一度お試しください。";
-    else if (code) msg += "(" + code + ")";
-    el.textContent = msg;
-    el.hidden = false;
   }
 
   // ------------------------------------------------------------
@@ -816,28 +741,88 @@
   // 設定
   // ------------------------------------------------------------
   function fillSettings() {
-    var p = state.profile || {};
-    $("modeInfo").textContent = store.mode === "firebase"
-      ? "Firebaseに接続中:曲リスト・点数・お気に入りはすべて自分のアカウントだけに保存されます。どの端末からログインしても同じデータが見られます。"
-      : "お試しモード:Firebaseが未設定のため、データはこの端末のブラウザだけに保存されます。";
+    var songs = state.songs.length, scores = state.scores.length;
+    $("dataInfo").textContent = "この端末に " + songs + "曲・点数記録 " + scores + "件 が保存されています。";
+    var last = lsGet("ohako.lastExport", null);
+    $("backupInfo").textContent = last ? "最後にバックアップした日:" + shortDate(last, true) : "まだバックアップしていません。";
     $("ytInfo").textContent = CFG.youtubeApiKey
-      ? "YouTube動画検索:使えます(1日あたり約100回まで)"
-      : "YouTube動画検索:APIキー未設定(URL貼り付けでの登録は使えます)";
-    $("logoutBtn").hidden = store.mode !== "firebase";
-    $("clearLocalBtn").hidden = store.mode !== "local";
+      ? "YouTubeの動画検索:使えます。検索回数の上限(1日約100回)は利用者全員の合計です。上限に達した日は、動画URLの貼り付けで登録してください。"
+      : "YouTubeの動画検索:使えません。動画URLの貼り付けで登録できます。";
+    $("importStatus").hidden = true;
+    resetClear();
+    pendingImport = null;
+    $("importConfirm").hidden = true;
   }
 
-  $("logoutBtn").addEventListener("click", function () { store.signOut(); });
+  // ---- バックアップを書き出す ----
+  $("exportBtn").addEventListener("click", function () {
+    var json = JSON.stringify(store.exportData(), null, 1);
+    var blob = new Blob([json], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "ohako-backup-" + today() + ".json";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    lsSet("ohako.lastExport", today());
+    fillSettings();
+    toast("バックアップファイルを書き出しました");
+  });
 
-  var clearArmed = false;
+  // ---- バックアップを読み込む(今のデータと置き換え) ----
+  var pendingImport = null;
+  function importMsg(msg, isError) {
+    var el = $("importStatus");
+    el.textContent = msg;
+    el.className = isError ? "form-error" : "hint";
+    el.hidden = false;
+  }
+  $("importBtn").addEventListener("click", function () { $("importFile").click(); });
+  $("importFile").addEventListener("change", function (e) {
+    var file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var obj;
+      try { obj = JSON.parse(reader.result); } catch (err) { importMsg("このファイルは読み込めませんでした。オハコ帳で書き出したファイルを選んでください。", true); return; }
+      var d = obj && obj.app === "ohako" ? obj.data : obj;
+      var n = d && d.songs ? Object.keys(d.songs).length : 0;
+      if (!n) { importMsg("このファイルには曲のデータが入っていません。", true); return; }
+      var m = d.scores ? Object.keys(d.scores).length : 0;
+      pendingImport = obj;
+      $("importSummary").textContent = n + "曲・点数記録 " + m + "件 を読み込みます。今この端末にあるデータは消えて、ファイルの内容に置き換わります。";
+      $("importConfirm").hidden = false;
+      $("importStatus").hidden = true;
+    };
+    reader.onerror = function () { importMsg("ファイルを開けませんでした。", true); };
+    reader.readAsText(file);
+  });
+  $("importOk").addEventListener("click", function () {
+    if (!pendingImport) return;
+    store.importData(pendingImport).then(function (r) {
+      pendingImport = null;
+      fillSettings();
+      toast(r.songs + "曲を読み込みました");
+    }).catch(function () { importMsg("読み込めませんでした。", true); });
+  });
+  $("importCancel").addEventListener("click", function () { pendingImport = null; $("importConfirm").hidden = true; });
+
+  // ---- すべて消す(2回押し) ----
+  var clearArmed = false, clearTimer = 0;
+  function resetClear() {
+    clearArmed = false;
+    clearTimeout(clearTimer);
+    $("clearLocalBtn").textContent = "この端末のデータをすべて消す";
+  }
   $("clearLocalBtn").addEventListener("click", function () {
     if (!clearArmed) {
       clearArmed = true;
-      $("clearLocalBtn").textContent = "もう一度押すと消えます";
-      setTimeout(function () { clearArmed = false; $("clearLocalBtn").textContent = "お試しデータをすべて消す"; }, 4000);
+      $("clearLocalBtn").textContent = "もう一度押すと消えます(元に戻せません)";
+      clearTimer = setTimeout(resetClear, 4000);
       return;
     }
-    store.clearAll();
+    store.clearAll().then(function () { resetClear(); fillSettings(); toast("すべてのデータを消しました"); });
   });
 
   // ------------------------------------------------------------
@@ -862,26 +847,17 @@
   $("sortSelect").value = state.sort;
   $("sortSelect").addEventListener("change", function (e) { state.sort = e.target.value; lsSet("ohako.sort", state.sort); renderSongs(); });
   $("addSongBtn").addEventListener("click", function () { openForm(null); });
-  $("loginBtn").addEventListener("click", function () {
-    $("loginError").hidden = true;
-    store.signIn().catch(showLoginError);
-  });
-  $("userChip").addEventListener("click", function () { showView("settings"); });
 
   // ------------------------------------------------------------
   // 起動
   // ------------------------------------------------------------
-  $("modeBadge").hidden = store.mode !== "local";
-
-  store.start(function (user) {
-    state.user = user;
-    state.songs = []; state.scores = []; state.favs = {}; state.profile = {};
-    if (!user) { showLogin(); return; }
+  store.start(function () {
     $("tabbar").hidden = false;
-    var chip = $("userChip");
-    chip.hidden = store.mode === "local";
-    chip.textContent = user.name || "設定";
-    store.onSongs(function (list) { state.songs = list; renderAll(); });
+    store.onSongs(function (list) {
+      state.songs = list;
+      renderAll();
+      if (!$("view-settings").hidden) fillSettings();
+    });
     store.onScores(function (list) {
       state.scores = list.map(function (s) { return Object.assign({}, s, { score: Number(s.score) }); });
       renderAll();

@@ -13,28 +13,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
     <span class="brand-name">オハコ帳</span>
-    <span class="mode-badge" id="modeBadge" hidden>お試しモード</span>
   </div>
-  <button class="user-chip" id="userChip" type="button" hidden></button>
 </header>
 
 <main id="main">
 
-  <!-- ログイン画面(Firebaseモードで未ログインのとき) -->
-  <section class="view" id="view-login" hidden>
-    <div class="login-card">
-      <p class="login-lead">自分だけの<br>カラオケ記録帳</p>
-      <button class="btn btn-primary btn-lg" id="loginBtn" type="button">Googleでログイン</button>
-      <p class="hint" id="loginError" hidden></p>
-    </div>
-  </section>
 
   <!-- 曲リスト -->
   <section class="view" id="view-songs" hidden>
@@ -77,12 +67,36 @@
     <h1 class="view-title">設定</h1>
     <div class="settings">
       <div class="info-block">
-        <h2>接続状態</h2>
-        <p id="modeInfo"></p>
+        <h2>データの保存場所</h2>
+        <p id="dataInfo"></p>
+        <p>データはこのスマホ(またはパソコン)のブラウザの中だけに保存されます。別の端末とは共有されません。ブラウザのデータを消したり機種変更したりすると記録も消えるので、ときどきバックアップしてください。</p>
+      </div>
+
+      <div class="info-block">
+        <h2>バックアップ</h2>
+        <p id="backupInfo"></p>
+        <div class="backup-actions">
+          <button class="btn btn-primary" id="exportBtn" type="button">ファイルに保存</button>
+          <button class="btn" id="importBtn" type="button">ファイルから戻す</button>
+        </div>
+        <input type="file" id="importFile" accept=".json,application/json" hidden>
+        <p class="hint" id="importStatus" hidden></p>
+        <div class="import-confirm" id="importConfirm" hidden>
+          <p id="importSummary"></p>
+          <div class="backup-actions">
+            <button class="btn btn-danger" id="importOk" type="button">置き換えて読み込む</button>
+            <button class="btn" id="importCancel" type="button">やめる</button>
+          </div>
+        </div>
+        <p class="hint">保存したファイルを別の端末で「ファイルから戻す」と、データを引っ越しできます。</p>
+      </div>
+
+      <div class="info-block">
+        <h2>YouTube</h2>
         <p id="ytInfo"></p>
       </div>
-      <button class="btn" id="logoutBtn" type="button" hidden>ログアウト</button>
-      <button class="btn btn-danger" id="clearLocalBtn" type="button" hidden>お試しデータをすべて消す</button>
+
+      <button class="btn btn-ghost-danger" id="clearLocalBtn" type="button">この端末のデータをすべて消す</button>
     </div>
   </section>
 </main>
@@ -139,12 +153,8 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<!-- Firebase(compat版。設定が空なら使いません) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="config.js?v=6"></script>
-<script src="notes.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="config.js?v=7"></script>
+<script src="notes.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

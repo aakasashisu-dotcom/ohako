@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>オハコ帳 データ引っ越し</title>
+<link rel="stylesheet" href="style.css?v=7">
+<style>
+  .mig { max-width: 520px; margin: 0 auto; padding: 32px 16px; display: grid; gap: 16px; }
+  .mig h1 { font-size: 20px; margin: 0; }
+  .mig p { margin: 0; }
+  .mig ol { margin: 0; padding-left: 1.4em; display: grid; gap: 4px; }
+</style>
+</head>
+<body>
+<main class="mig">
+  <h1>ログイン版のデータを引っ越す</h1>
+  <p>以前Googleログインで保存した曲・点数・お気に入りを、この端末に移します。この作業は1回だけで大丈夫です。</p>
+  <ol>
+    <li>以前使っていたGoogleアカウントでログインします。</li>
+    <li>データがこの端末に移ります(今この端末にあるデータは残ります)。</li>
+    <li>アプリに戻って確認します。</li>
+  </ol>
+  <button class="btn btn-primary btn-lg" id="go" type="button">Googleでログインして引っ越す</button>
+  <p class="hint" id="status"></p>
+  <a class="btn" href="./" id="back">アプリに戻る</a>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="config.js?v=7"></script>
+<script>
+(function () {
+  "use strict";
+  var KEY = "ohako.local.v1";
+  var status = document.getElementById("status");
+  var btn = document.getElementById("go");
+  function say(msg, isError) { status.textContent = msg; status.className = isError ? "form-error" : "hint"; }
+
+  var cfg = (window.OHAKO_CONFIG || {}).firebase || {};
+  if (!window.firebase || !cfg.apiKey) {
+    say("Firebaseの設定が見つからないため、引っ越しできません。", true);
+    btn.disabled = true;
+    return;
+  }
+  firebase.initializeApp(cfg);
+  var auth = firebase.auth(), db = firebase.firestore();
+
+  function readCol(uid, name) {
+    return db.collection("users").doc(uid).collection(name).get().then(function (snap) {
+      var out = {};
+      snap.forEach(function (d) { out[d.id] = d.data(); });
+      return out;
+    });
+  }
+
+  function migrate(user) {
+    say("データを読み込み中…");
+    Promise.all([readCol(user.uid, "songs"), readCol(user.uid, "scores"), readCol(user.uid, "favs")]).then(function (r) {
+      var songs = r[0], scores = r[1], favs = r[2];
+      var n = Object.keys(songs).length;
+      if (!n) { say("このアカウントには引っ越すデータがありませんでした。", true); return; }
+      var local;
+      try { local = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { local = {}; }
+      local.songs = Object.assign({}, local.songs || {}, songs);
+      local.scores = Object.assign({}, local.scores || {}, scores);
+      local.favs = Object.assign({}, local.favs || {}, favs);
+      local.profile = local.profile || {};
+      try { localStorage.setItem(KEY, JSON.stringify(local)); }
+      catch (e) { say("この端末に保存できませんでした。プライベートモードなら通常のモードで開き直してください。", true); return; }
+      say(n + "曲・点数記録 " + Object.keys(scores).length + "件 をこの端末に移しました。「アプリに戻る」を押してください。");
+      btn.disabled = true;
+      auth.signOut();
+    }).catch(function (e) {
+      say(e && e.code === "permission-denied"
+        ? "このアカウントのデータは読み込めませんでした。以前使っていたアカウントか確認してください。"
+        : "読み込みに失敗しました。通信状態を確認して、もう一度お試しください。", true);
+    });
+  }
+
+  auth.getRedirectResult().then(function (res) { if (res && res.user) migrate(res.user); }).catch(function () {});
+
+  btn.addEventListener("click", function () {
+    var p = new firebase.auth.GoogleAuthProvider();
+    p.setCustomParameters({ prompt: "select_account" });
+    auth.signInWithPopup(p).then(function (res) { migrate(res.user); }).catch(function (e) {
+      if (e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment")) return auth.signInWithRedirect(p);
+      say("ログインできませんでした。" + (e && e.code ? "(" + e.code + ")" : ""), true);
+    });
+  });
+})();
+</script>
+</body>
+</html>

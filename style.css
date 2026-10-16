@@ -310,7 +310,13 @@ main { max-width: 640px; margin: 0 auto; padding-inline: 16px; }
 .saved-msg { margin: -8px 0 0; color: var(--ok); font-weight: 700; font-size: 13px; }
 .info-block { background: var(--surface); border-radius: var(--radius); padding: 14px; }
 .info-block h2 { margin: 0 0 6px; font-size: 14px; }
-.info-block p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.info-block { display: grid; gap: 8px; }
+.info-block p { margin: 0; font-size: 13px; color: var(--muted); }
+.info-block h2 { margin: 0; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.backup-actions .btn { flex: 1 1 140px; }
+.import-confirm { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: var(--warn-soft); }
+.import-confirm p { color: var(--ink); font-weight: 700; }
 
 /* ---------- トースト ---------- */
 .toast {
