@@ -138,7 +138,7 @@ main { max-width: 640px; margin: 0 auto; padding-inline: 16px; }
 
 .song-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .song-card {
-  width: 100%; display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  width: 100%; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; align-items: center;
   padding: 8px 12px 8px 8px; border-radius: var(--radius); border: 0; background: var(--surface);
   box-shadow: var(--shadow); text-align: left; cursor: pointer;
 }

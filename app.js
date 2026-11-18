@@ -152,23 +152,12 @@
   // ------------------------------------------------------------
   var store = createLocalStore();
   var state = {
-    songs: [], scores: [], favs: {}, profile: {},
+    songs: [], favs: {}, profile: {},
     view: lsGet("ohako.view", "songs"),
     sort: lsGet("ohako.sort", "new"),
     query: "",
     openSongId: null
   };
-
-  function statsFor(songId) {
-    var list = state.scores.filter(function (s) { return s.songId === songId; });
-    var best = null;
-    var last = null;
-    list.forEach(function (s) {
-      if (best == null || s.score > best) best = s.score;
-      if (s.date && (last == null || s.date > last)) last = s.date;
-    });
-    return { count: list.length, best: best, last: last, list: list };
-  }
 
   // "2026-10-12" → 今年なら "10/12"、それ以外は "2025/3/4"
   function shortDate(d, withYear) {
@@ -178,12 +167,6 @@
     var y = p[0], m = String(parseInt(p[1], 10)), day = String(parseInt(p[2], 10));
     if (!withYear && y === String(new Date().getFullYear())) return m + "/" + day;
     return y + "/" + m + "/" + day;
-  }
-
-  function daysAgo(d) {
-    if (!d) return null;
-    var t = new Date(today() + "T00:00:00"), s = new Date(d + "T00:00:00");
-    return Math.round((t - s) / 86400000);
   }
 
   // ------------------------------------------------------------
@@ -213,45 +196,23 @@
         return N.normalize(s.title).indexOf(q) >= 0 || N.normalize(s.artist).indexOf(q) >= 0;
       });
     }
-    var cache = {};
-    function st(id) { return cache[id] || (cache[id] = statsFor(id)); }
-    var byStr = function (a, b) { return String(a || "").localeCompare(String(b || ""), "ja"); };
-    var nullLast = function (a, b, dir) {
-      if (a == null && b == null) return 0;
-      if (a == null) return 1;
-      if (b == null) return -1;
-      return dir * (a - b);
-    };
     list.sort(function (a, b) {
       switch (state.sort) {
         case "title": return byStr(a.title, b.title);
         case "artist": return byStr(a.artist, b.artist) || byStr(a.title, b.title);
-        case "best": return nullLast(st(a.id).best, st(b.id).best, -1);
-        case "count": return st(b.id).count - st(a.id).count;
-        case "recent": // 最近歌った順(まだ歌っていない曲は最後)
-          var ra = st(a.id).last, rb = st(b.id).last;
-          if (ra === rb) return 0;
-          if (!ra) return 1;
-          if (!rb) return -1;
-          return ra < rb ? 1 : -1;
-        case "stale": // しばらく歌っていない順(まだ歌っていない曲が先頭)
-          var sa = st(a.id).last, sb = st(b.id).last;
-          if (sa === sb) return 0;
-          if (!sa) return -1;
-          if (!sb) return 1;
-          return sa < sb ? -1 : 1;
         default: return (b.createdAt || 0) - (a.createdAt || 0);
       }
     });
     return list;
   }
 
+  function byStr(a, b) { return String(a || "").localeCompare(String(b || ""), "ja"); }
+
   function thumbUrl(song) {
     return song.videoId ? "https://i.ytimg.com/vi/" + song.videoId + "/mqdefault.jpg" : null;
   }
 
   function songCard(song) {
-    var s = statsFor(song.id);
     var fav = !!state.favs[song.id];
     var thumb = thumbUrl(song);
     return h("li", null,
@@ -261,12 +222,7 @@
         ),
         h("div", { class: "song-main" },
           h("div", { class: "song-title" }, fav ? h("span", { class: "fav-star", "aria-label": "お気に入り", text: "★" }) : null, song.title || "(無題)"),
-          h("div", { class: "song-artist", text: song.artist || "歌手名なし" }),
-          h("div", { class: "song-last", text: s.last ? "最後に歌った日 " + shortDate(s.last) : "まだ歌っていません" })
-        ),
-        h("div", { class: "song-score" },
-          h("span", { class: "score-num", text: s.best != null ? N.formatScore(s.best) : "—" }),
-          h("span", { class: "score-label", text: s.count ? s.count + "回" : "未記録" })
+          h("div", { class: "song-artist", text: song.artist || "歌手名なし" })
         )
       )
     );
@@ -295,13 +251,7 @@
 
   function renderFavs() {
     var list = state.songs.filter(function (s) { return state.favs[s.id]; });
-    list.sort(function (a, b) {
-      var A = statsFor(a.id).best, B = statsFor(b.id).best;
-      if (A == null && B == null) return 0;
-      if (A == null) return 1;
-      if (B == null) return -1;
-      return B - A;
-    });
+    list.sort(function (a, b) { return byStr(a.title, b.title); });
     var ul = $("favList");
     ul.replaceChildren.apply(ul, list.map(songCard));
     $("favsEmpty").hidden = list.length > 0;
@@ -321,11 +271,11 @@
     return tpl.replace("{q}", q).replace("{title}", encodeURIComponent(song.title || ""));
   }
 
-  var detailUi = { playing: false, ytOpen: false, ytResults: null, ytError: "", ytLoading: false, confirmDelete: false, confirmScore: null };
+  var detailUi = { playing: false, ytOpen: false, ytResults: null, ytError: "", ytLoading: false, confirmDelete: false };
 
   function openDetail(id) {
     state.openSongId = id;
-    detailUi = { playing: false, ytOpen: false, ytResults: null, ytError: "", ytLoading: false, confirmDelete: false, confirmScore: null };
+    detailUi = { playing: false, ytOpen: false, ytResults: null, ytError: "", ytLoading: false, confirmDelete: false };
     renderDetail();
     var d = $("detailDialog");
     if (!d.open) d.showModal();
@@ -336,7 +286,6 @@
     var song = state.songs.find(function (s) { return s.id === state.openSongId; });
     var body = $("detailBody");
     if (!song) { $("detailDialog").close(); return; }
-    var stats = statsFor(song.id);
     var fav = !!state.favs[song.id];
     var L = CFG.links || {};
 
@@ -357,12 +306,6 @@
         h("span", { text: "動画が未登録です" }));
     }
 
-    var bestId = null;
-    stats.list.forEach(function (s) { if (s.score === stats.best && bestId == null) bestId = s.id; });
-    var history = stats.list.slice().sort(function (a, b) {
-      return String(b.date || "").localeCompare(String(a.date || "")) || (b.createdAt || 0) - (a.createdAt || 0);
-    });
-
     // 動画部分は変化があったときだけ作り直す(再生中の動画が止まらないように)
     var mediaKey = (song.videoId || "") + "|" + detailUi.playing;
     var mediaWrap = $("detailMedia"), restWrap = $("detailRest");
@@ -380,13 +323,6 @@
       h("div", { class: "detail-head" },
         h("h2", { id: "detailTitle", class: "detail-title", text: song.title || "(無題)" }),
         h("p", { class: "detail-artist", text: song.artist || "歌手名なし" }),
-        h("div", { class: "note-row" },
-          h("div", { class: "note-box" }, h("span", { class: "note-label", text: "自己ベスト" }), h("span", { class: "note-val", text: stats.best != null ? N.formatScore(stats.best) : "—" })),
-          h("div", { class: "note-box" }, h("span", { class: "note-label", text: "歌った回数" }), h("span", { class: "note-val", text: stats.count + "回" })),
-          h("div", { class: "note-box" }, h("span", { class: "note-label", text: "最後に歌った日" }),
-            h("span", { class: "note-val", text: stats.last ? shortDate(stats.last) : "—" }),
-            stats.last ? h("span", { class: "note-sci", text: (function (n) { return n <= 0 ? "今日" : n + "日前"; })(daysAgo(stats.last)) }) : null)
-        ),
         h("button", { class: "btn btn-wide fav-btn" + (fav ? " is-on" : ""), type: "button", "aria-pressed": fav ? "true" : "false",
           onclick: function () { store.setFav(song.id, !fav).then(function () { toast(fav ? "お気に入りから外しました" : "お気に入りに追加しました"); }); } },
           fav ? "★ お気に入り(外す)" : "☆ お気に入りに追加")
@@ -397,25 +333,6 @@
       ),
 
       videoSection(song),
-      scoreForm(song),
-
-      h("section", { class: "detail-sec" },
-        h("h3", { text: "点数の記録" }),
-        history.length ? h("p", { class: "hint", text: "記録をタップすると、修正・削除できます。" }) : null,
-        history.length ? h("ul", { class: "history" }, history.map(function (s) {
-          if (detailUi.editScore === s.id) return scoreEditRow(s);
-          return h("li", { class: "hist" + (s.id === bestId ? " is-best" : "") },
-            h("button", { class: "hist-main", type: "button", "aria-label": "この記録を修正",
-              onclick: function () { detailUi.editScore = s.id; detailUi.confirmScore = null; renderDetail(); } },
-              h("span", { class: "hist-score", text: N.formatScore(s.score) }),
-              s.id === bestId ? h("span", { class: "chip chip-best", text: "ベスト" }) : null,
-              h("span", { class: "hist-meta", text: [s.date, s.machine, keyLabel(s.key)].filter(Boolean).join(" ・ ") }),
-              s.memo ? h("span", { class: "hist-memo", text: s.memo }) : null
-            ),
-            h("span", { class: "hist-edit", "aria-hidden": "true", text: "修正" })
-          );
-        })) : h("p", { class: "hint", text: "まだ記録がありません。歌ったら上のフォームから点数を残しましょう。" })
-      ),
 
       h("section", { class: "detail-sec detail-foot" },
         h("div", { class: "foot-actions" },
@@ -424,7 +341,7 @@
             ? h("button", { class: "btn btn-danger", type: "button", onclick: function () {
                 store.deleteSong(song.id).then(function () { $("detailDialog").close(); toast("曲を削除しました"); })
                   .catch(function () { toast("削除できませんでした"); });
-              } }, "本当に削除する(点数記録も消えます)")
+              } }, "本当に削除する")
             : h("button", { class: "btn btn-ghost-danger", type: "button", onclick: function () { detailUi.confirmDelete = true; renderDetail(); } }, "曲を削除")
         )
       )
@@ -545,101 +462,6 @@
     });
   }
 
-  var lastScoreForm = lsGet("ohako.lastScore", { machine: "DAM" });
-
-  function keyLabel(k) {
-    k = Number(k) || 0;
-    return k === 0 ? "原曲キー" : "キー" + (k > 0 ? "+" : "") + k;
-  }
-
-  function machineSelect(id, value) {
-    return h("select", { id: id }, ["DAM", "JOYSOUND", "その他"].map(function (m) {
-      return h("option", { value: m, selected: value === m }, m);
-    }));
-  }
-
-  function keySelect(id, value) {
-    var opts = [];
-    for (var v = -7; v <= 7; v++) opts.push(h("option", { value: String(v), selected: v === (Number(value) || 0) }, v === 0 ? "原曲キー" : (v > 0 ? "+" : "") + v));
-    return h("select", { id: id }, opts);
-  }
-
-  // 点数記録の修正(行がその場で編集フォームになる)
-  function scoreEditRow(s) {
-    var score = h("input", { type: "number", id: "eScore", inputmode: "decimal", step: "0.001", min: "0", max: "100", value: String(s.score) });
-    var machine = machineSelect("eMachine", s.machine);
-    var key = keySelect("eKey", s.key);
-    var date = h("input", { type: "date", id: "eDate", value: s.date || today() });
-    var memo = h("input", { type: "text", id: "eMemo", maxlength: "100", value: s.memo || "", placeholder: "メモ(任意)" });
-    var confirming = detailUi.confirmScore === s.id;
-    function close() { detailUi.editScore = null; detailUi.confirmScore = null; renderDetail(); }
-    return h("li", { class: "hist hist-editing" },
-      h("form", { class: "score-form score-edit", novalidate: true, onsubmit: function (e) {
-        e.preventDefault();
-        var v = parseFloat(score.value);
-        if (isNaN(v) || v < 0 || v > 100) { toast("点数は0〜100の数字で入れてください"); score.focus(); return; }
-        store.updateScore(s.id, { score: v, machine: machine.value, key: parseInt(key.value, 10), date: date.value || today(), memo: memo.value.trim() })
-          .then(function () { toast("記録を修正しました"); })
-          .catch(function () { toast("保存できませんでした"); });
-        close();
-      } },
-        h("div", { class: "score-grid" },
-          h("label", { class: "sg-score" }, "点数", score),
-          h("label", null, "機種", machine),
-          h("label", null, "キー", key),
-          h("label", null, "日付", date)
-        ),
-        memo,
-        h("div", { class: "edit-actions" },
-          h("button", { class: "btn btn-primary", type: "submit" }, "保存"),
-          h("button", { class: "btn", type: "button", onclick: close }, "キャンセル"),
-          h("button", { class: "btn " + (confirming ? "btn-danger" : "btn-ghost-danger"), type: "button", onclick: function () {
-            if (!confirming) { detailUi.confirmScore = s.id; renderDetail(); return; }
-            store.deleteScore(s.id).then(function () { toast("記録を削除しました"); });
-            close();
-          } }, confirming ? "本当に削除" : "削除")
-        )
-      )
-    );
-  }
-
-  function scoreForm(song) {
-    var score = h("input", { type: "number", id: "sScore", inputmode: "decimal", step: "0.001", min: "0", max: "100", placeholder: "例:91.234", required: true });
-    var machine = h("select", { id: "sMachine" }, ["DAM", "JOYSOUND", "その他"].map(function (m) {
-      return h("option", { value: m, selected: lastScoreForm.machine === m }, m);
-    }));
-    var keys = [];
-    for (var i = -7; i <= 7; i++) keys.push(i);
-    var defKey = 0;
-    var key = h("select", { id: "sKey" }, keys.map(function (v) {
-      return h("option", { value: String(v), selected: v === defKey }, v === 0 ? "原曲キー" : (v > 0 ? "+" : "") + v);
-    }));
-    var date = h("input", { type: "date", id: "sDate", value: today() });
-    var memo = h("input", { type: "text", id: "sMemo", maxlength: "100", placeholder: "メモ(任意)例:Aメロ低め" });
-
-    return h("form", { class: "detail-sec score-form", novalidate: true, onsubmit: function (e) {
-      e.preventDefault();
-      var v = parseFloat(score.value);
-      if (isNaN(v) || v < 0 || v > 100) { toast("点数は0〜100の数字で入れてください"); score.focus(); return; }
-      lastScoreForm = { machine: machine.value };
-      lsSet("ohako.lastScore", lastScoreForm);
-      var best = statsFor(song.id).best;
-      store.addScore({ songId: song.id, score: v, machine: machine.value, key: parseInt(key.value, 10), date: date.value || today(), memo: memo.value.trim() })
-        .then(function () { toast(best == null || v > best ? "自己ベスト更新!" : "記録しました"); })
-        .catch(function () { toast("保存できませんでした"); });
-    } },
-      h("h3", { text: "点数を記録" }),
-      h("div", { class: "score-grid" },
-        h("label", { class: "sg-score" }, "点数", score),
-        h("label", null, "機種", machine),
-        h("label", null, "キー", key),
-        h("label", null, "日付", date)
-      ),
-      memo,
-      h("button", { class: "btn btn-primary btn-wide", type: "submit" }, "記録する")
-    );
-  }
-
   // ------------------------------------------------------------
   // 曲の追加・編集フォーム
   // ------------------------------------------------------------
@@ -741,8 +563,7 @@
   // 設定
   // ------------------------------------------------------------
   function fillSettings() {
-    var songs = state.songs.length, scores = state.scores.length;
-    $("dataInfo").textContent = "この端末に " + songs + "曲・点数記録 " + scores + "件 が保存されています。";
+    $("dataInfo").textContent = "この端末に " + state.songs.length + "曲 が保存されています。";
     var last = lsGet("ohako.lastExport", null);
     $("backupInfo").textContent = last ? "最後にバックアップした日:" + shortDate(last, true) : "まだバックアップしていません。";
     $("ytInfo").textContent = CFG.youtubeApiKey
@@ -789,9 +610,8 @@
       var d = obj && obj.app === "ohako" ? obj.data : obj;
       var n = d && d.songs ? Object.keys(d.songs).length : 0;
       if (!n) { importMsg("このファイルには曲のデータが入っていません。", true); return; }
-      var m = d.scores ? Object.keys(d.scores).length : 0;
       pendingImport = obj;
-      $("importSummary").textContent = n + "曲・点数記録 " + m + "件 を読み込みます。今この端末にあるデータは消えて、ファイルの内容に置き換わります。";
+      $("importSummary").textContent = n + "曲 を読み込みます。今この端末にあるデータは消えて、ファイルの内容に置き換わります。";
       $("importConfirm").hidden = false;
       $("importStatus").hidden = true;
     };
@@ -843,7 +663,7 @@
   });
 
   $("searchInput").addEventListener("input", function (e) { state.query = e.target.value; renderSongs(); });
-  if (["new", "title", "artist", "best", "count", "recent", "stale"].indexOf(state.sort) < 0) state.sort = "new";
+  if (["new", "title", "artist"].indexOf(state.sort) < 0) state.sort = "new";
   $("sortSelect").value = state.sort;
   $("sortSelect").addEventListener("change", function (e) { state.sort = e.target.value; lsSet("ohako.sort", state.sort); renderSongs(); });
   $("addSongBtn").addEventListener("click", function () { openForm(null); });
@@ -857,10 +677,6 @@
       state.songs = list;
       renderAll();
       if (!$("view-settings").hidden) fillSettings();
-    });
-    store.onScores(function (list) {
-      state.scores = list.map(function (s) { return Object.assign({}, s, { score: Number(s.score) }); });
-      renderAll();
     });
     store.onFavs(function (list) {
       var m = {};
