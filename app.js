@@ -152,7 +152,7 @@
   // ------------------------------------------------------------
   var store = createLocalStore();
   var state = {
-    songs: [], favs: {}, profile: {},
+    songs: [], profile: {},
     view: lsGet("ohako.view", "songs"),
     sort: lsGet("ohako.sort", "new"),
     query: "",
@@ -175,7 +175,7 @@
   function showView(name) {
     state.view = name;
     lsSet("ohako.view", name);
-    ["songs", "favs", "settings"].forEach(function (v) {
+    ["songs", "settings"].forEach(function (v) {
       $("view-" + v).hidden = v !== name;
     });
     document.querySelectorAll(".tab").forEach(function (t) {
@@ -213,7 +213,6 @@
   }
 
   function songCard(song) {
-    var fav = !!state.favs[song.id];
     var thumb = thumbUrl(song);
     return h("li", null,
       h("button", { class: "song-card", type: "button", onclick: function () { openDetail(song.id); } },
@@ -221,7 +220,7 @@
           thumb ? h("img", { src: thumb, alt: "", loading: "lazy" }) : h("span", { class: "thumb-note", text: "♪" })
         ),
         h("div", { class: "song-main" },
-          h("div", { class: "song-title" }, fav ? h("span", { class: "fav-star", "aria-label": "お気に入り", text: "★" }) : null, song.title || "(無題)"),
+          h("div", { class: "song-title", text: song.title || "(無題)" }),
           h("div", { class: "song-artist", text: song.artist || "歌手名なし" })
         )
       )
@@ -249,17 +248,8 @@
       : "全" + state.songs.length + "曲";
   }
 
-  function renderFavs() {
-    var list = state.songs.filter(function (s) { return state.favs[s.id]; });
-    list.sort(function (a, b) { return byStr(a.title, b.title); });
-    var ul = $("favList");
-    ul.replaceChildren.apply(ul, list.map(songCard));
-    $("favsEmpty").hidden = list.length > 0;
-  }
-
   function renderAll() {
     renderSongs();
-    renderFavs();
     if (state.openSongId && $("detailDialog").open) renderDetail();
   }
 
@@ -286,7 +276,6 @@
     var song = state.songs.find(function (s) { return s.id === state.openSongId; });
     var body = $("detailBody");
     if (!song) { $("detailDialog").close(); return; }
-    var fav = !!state.favs[song.id];
     var L = CFG.links || {};
 
     // 動画エリア
@@ -322,10 +311,7 @@
     restWrap.replaceChildren(
       h("div", { class: "detail-head" },
         h("h2", { id: "detailTitle", class: "detail-title", text: song.title || "(無題)" }),
-        h("p", { class: "detail-artist", text: song.artist || "歌手名なし" }),
-        h("button", { class: "btn btn-wide fav-btn" + (fav ? " is-on" : ""), type: "button", "aria-pressed": fav ? "true" : "false",
-          onclick: function () { store.setFav(song.id, !fav).then(function () { toast(fav ? "お気に入りから外しました" : "お気に入りに追加しました"); }); } },
-          fav ? "★ お気に入り(外す)" : "☆ お気に入りに追加")
+        h("p", { class: "detail-artist", text: song.artist || "歌手名なし" })
       ),
 
       h("div", { class: "links" },
@@ -678,16 +664,10 @@
       renderAll();
       if (!$("view-settings").hidden) fillSettings();
     });
-    store.onFavs(function (list) {
-      var m = {};
-      list.forEach(function (f) { m[f.id] = true; });
-      state.favs = m;
-      renderAll();
-    });
     store.onProfile(function (p) {
       state.profile = p || {};
       renderAll();
     });
-    showView(["songs", "favs", "settings"].indexOf(state.view) >= 0 ? state.view : "songs");
+    showView(["songs", "settings"].indexOf(state.view) >= 0 ? state.view : "songs");
   });
 })();
